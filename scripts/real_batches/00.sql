@@ -1,0 +1,1 @@
+-- Clear old generated data
