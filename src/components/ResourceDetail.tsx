@@ -15,7 +15,7 @@ import {
 import {
   fetchPlaceResult, placePhotoUrl, clearbitLogoUrl,
   isVirtualService, hasGoogleKey, PlaceResult,
-} from '../lib/resourceImage';
+} from '../lib/resourceImages';
 import { PlacePhotoGallery } from './ResourceImage';
 
 interface FacilityDetailProps {
@@ -44,7 +44,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
   );
   const costEstimate = estimateCost(resource, coverage);
 
-  // ── Hero image state ────────────────────────────────────────────────────────
+  // ── Hero image state ──────────────────────────────────────────────────────
   type HeroKind = 'avatar' | 'loading' | 'photo' | 'logo';
   const [heroKind,  setHeroKind]  = useState<HeroKind>('loading');
   const [heroSrc,   setHeroSrc]   = useState<string>('');
@@ -123,7 +123,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
         className="relative w-full sm:max-w-2xl lg:max-w-3xl max-h-[92vh] sm:max-h-[88vh] bg-white rounded-t-3xl sm:rounded-3xl shadow-card overflow-hidden flex flex-col animate-scale-in"
         role="dialog" aria-modal="true" aria-label={resource.name}
       >
-        {/* ── Hero image ──────────────────────────────────────────────────────────── */}
+        {/* ── Hero image ───────────────────────────────────────────────────── */}
         <div className={`relative flex-shrink-0 overflow-hidden ${isLogo ? 'h-32 sm:h-40 bg-white' : 'h-48 sm:h-60 bg-ink-100'}`}>
 
           {isLoading && (
@@ -189,7 +189,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
           )}
         </div>
 
-        {/* ── Scrollable body ─────────────────────────────────────────────────────── */}
+        {/* ── Scrollable body ──────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-5 sm:p-6 space-y-6">
 
