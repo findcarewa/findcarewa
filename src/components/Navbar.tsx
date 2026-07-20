@@ -54,8 +54,8 @@ export function Navbar({ route, onNavigate }: NavbarProps) {
     <>
       <header
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ease-out-expo ${
-          scrolled || route.name !== 'home'
-            ? 'bg-cream-50/80 backdrop-blur-xl border-b border-ink-200/50 shadow-soft'
+          scrolled || route.name !== 'home' || mobileOpen
+            ? 'bg-cream-50/95 backdrop-blur-xl border-b border-ink-200/50 shadow-soft'
             : 'bg-transparent'
         }`}
       >
