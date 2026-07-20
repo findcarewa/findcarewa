@@ -24,7 +24,7 @@ import {
   type PlacePhoto,
   type PlaceResult,
   getAvatarBgColor,
-} from '../lib/resourceImage';
+} from '../lib/resourceImages';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
 
 // ─── Slug → Tailwind colour key ───────────────────────────────────────────────
@@ -38,7 +38,7 @@ function slugToColorKey(slug: string): string {
   return map[slug] ?? 'teal';
 }
 
-// ─── Category avatar badge ───────────────────────────────────────────────────
+// ─── Category avatar badge ────────────────────────────────────────────────────
 export function AvatarBadge({ slug, className = '' }: { slug: string; className?: string }) {
   const Icon  = getCategoryIcon(slug);
   const color = getCategoryColor(slugToColorKey(slug));
@@ -49,7 +49,7 @@ export function AvatarBadge({ slug, className = '' }: { slug: string; className?
   );
 }
 
-// ─── Main ResourceImage component ────────────────────────────────────────────
+// ─── Main ResourceImage component ─────────────────────────────────────────────
 
 interface ResourceImageProps {
   resource: ResourceWithCategory;
@@ -105,7 +105,7 @@ export function ResourceImage({
     return () => { cancelled = true; };
   }, [resource.id]);
 
-  // ── Advance through the fallback chain ──────────────────────────────────────
+  // ── Advance through the fallback chain ──────────────────────────────────
   function advanceFromScreenshot(currentIdx: number) {
     const nextIdx = currentIdx + 1;
     if (nextIdx < SCREENSHOT_PROVIDERS.length && resource.domain) {
@@ -146,7 +146,7 @@ export function ResourceImage({
     }
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
   if (state.kind === 'avatar') {
     return <AvatarBadge slug={slug} className={className} />;
   }
