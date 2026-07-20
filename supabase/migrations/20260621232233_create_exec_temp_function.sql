@@ -1,0 +1,2 @@
+CREATE OR REPLACE FUNCTION exec_temp(text) RETURNS void AS $$ BEGIN EXECUTE $1; END; $$ LANGUAGE plpgsql SECURITY DEFINER;
+GRANT EXECUTE ON FUNCTION exec_temp(text) TO anon, authenticated;
