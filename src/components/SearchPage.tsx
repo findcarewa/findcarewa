@@ -2,18 +2,18 @@ import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import {
   Search, SlidersHorizontal, Star, MapPin, Clock, Check,
   Frown, Map as MapIcon, List, DollarSign,
-  Building2, Sparkles, Heart, Brain, Warning, Stethoscope,
+  Building2, Sparkles, Heart,
 } from './IconLib';
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
-import { hybridSearch, extractZip, featuredServices, type HybridFilters } from '../lib/searchEngine';
+import { searchResources, buildSearchIndex, extractZip, featuredServices, type SearchFilters } from '../lib/fuseSearch';
 import { fetchSymptoms, type Symptom } from '../lib/symptoms';
-import { analyzeQuery, reRank, type SemanticAnalysis } from '../lib/semanticSearch';
 import { useFavorites } from '../lib/favorites';
 import { useAuth } from '../lib/auth';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
 import { formatCost, isOpenNow, formatTodayHours, roundDownFriendly } from '../lib/format';
 import { hasRating } from '../lib/resourceImages';
 import { ResourceDetail } from './ResourceDetail';
+import { highlightSegments } from '../lib/highlight';
 
 interface SearchPageProps {
   resources: ResourceWithCategory[];
@@ -37,22 +37,17 @@ export function SearchPage({
   const [showFilters, setShowFilters] = useState(false);
   const [selectedResource, setSelectedResource] = useState<ResourceWithCategory | null>(null);
   const [symptoms, setSymptoms] = useState<Symptom[]>([]);
-  const [semanticAnalysis, setSemanticAnalysis] = useState<SemanticAnalysis | null>(null);
 
-  // Load symptoms DB for semantic search enhancement
+  // Load symptoms DB for search index
   useEffect(() => {
     fetchSymptoms().then(setSymptoms).catch(() => {});
   }, []);
 
-  // Semantic analysis runs in a separate effect to avoid re-computing on every filter toggle.
-  // Uses deferred search so typing stays responsive while analysis runs.
-  useEffect(() => {
-    if (!deferredSearch || deferredSearch.trim().length < 2 || symptoms.length === 0) {
-      setSemanticAnalysis(null);
-      return;
-    }
-    setSemanticAnalysis(analyzeQuery(deferredSearch, symptoms));
-  }, [deferredSearch, symptoms]);
+  // Build Fuse.js index whenever resources or symptoms change
+  const searchIndex = useMemo(
+    () => buildSearchIndex(resources, symptoms),
+    [resources, symptoms],
+  );
 
   // Filter toggles
   const [acceptsMedicaid, setAcceptsMedicaid] = useState(false);
@@ -113,13 +108,11 @@ export function SearchPage({
       language: language || undefined,
     };
 
-    let results = hybridSearch(resources, filters);
-    if (semanticAnalysis) results = reRank(results, semanticAnalysis);
+    const results = searchResources(searchIndex, resources, filters);
 
-    // When there's a semantic analysis (symptom/intent detected), preserve the
-    // semantic ranking — don't override it with open-now + rating. Only apply
-    // the open-now + rating sort for plain keyword searches with no semantic signal.
-    if (semanticAnalysis && semanticAnalysis.intent !== 'keyword') {
+    // For text searches, Fuse.js ranking is authoritative — don't override it.
+    // For browse-only (no text), sort by open-now + rating.
+    if (deferredSearch && deferredSearch.trim().length >= 2) {
       return results;
     }
 
@@ -129,9 +122,9 @@ export function SearchPage({
       if (aOpen !== bOpen) return bOpen - aOpen;
       return b.rating - a.rating;
     });
-  }, [resources, activeCategory, county, city, acceptsMedicaid, medicare, acceptsUninsured,
+  }, [resources, searchIndex, activeCategory, county, city, acceptsMedicaid, medicare, acceptsUninsured,
       slidingScale, freeOptions, free, telehealth, walkIns, appointmentsAvailable, openNow,
-      wheelchairAccessible, language, deferredSearch, zipFilter, semanticAnalysis]);
+      wheelchairAccessible, language, deferredSearch, zipFilter]);
 
   const handleClear = () => {
     setSearch(''); setZipFilter('');
@@ -341,75 +334,6 @@ export function SearchPage({
           </div>
         )}
 
-        {/* Semantic interpretation panel */}
-        {semanticAnalysis && semanticAnalysis.intent !== 'keyword' && (
-          <div className={`mb-4 rounded-2xl border p-4 animate-fade-in ${
-            semanticAnalysis.redFlag
-              ? 'bg-danger-50 border-danger-200'
-              : 'bg-sage-50 border-sage-200'
-          }`}>
-            <div className="flex items-start gap-3">
-              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                semanticAnalysis.redFlag ? 'bg-danger-100' : 'bg-sage-100'
-              }`}>
-                {semanticAnalysis.redFlag ? (
-                  <Warning className="w-4 h-4 text-danger-600" />
-                ) : (
-                  <Brain className="w-4 h-4 text-sage-600" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                {semanticAnalysis.redFlag && (
-                  <p className="text-sm font-bold text-danger-700 mb-1">
-                    This may be an emergency. If life-threatening, call 911 now. For mental health crises, call 988.
-                  </p>
-                )}
-                <p className="text-xs text-primary-600 leading-relaxed">
-                  {semanticAnalysis.interpretation}
-                </p>
-                {semanticAnalysis.symptoms.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {semanticAnalysis.symptoms.slice(0, 3).map(({ symptom }) => (
-                      <button
-                        key={symptom.id}
-                        onClick={() => onNavigate({ name: 'symptom', slug: symptom.slug })}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
-                          symptom.red_flag
-                            ? 'bg-danger-100 text-danger-700 hover:bg-danger-200'
-                            : 'bg-white text-primary-600 hover:bg-sage-100 border border-ink-200'
-                        }`}
-                      >
-                        <Stethoscope className="w-3 h-3" />
-                        {symptom.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {semanticAnalysis.recommendedCategories.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {semanticAnalysis.recommendedCategories.slice(0, 5).map((catSlug) => {
-                      const cat = categories.find((c) => c.slug === catSlug);
-                      if (!cat) return null;
-                      const Icon = getCategoryIcon(cat.icon);
-                      const color = getCategoryColor(cat.color);
-                      return (
-                        <button
-                          key={catSlug}
-                          onClick={() => setActiveCategory(catSlug)}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-white border border-ink-200 text-primary-600 hover:border-sage-300 transition-colors"
-                        >
-                          <Icon className="w-3 h-3" />
-                          {cat.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Results count */}
         <div className="mb-4 flex items-center justify-between">
           <p className="text-sm text-primary-500">
@@ -457,6 +381,7 @@ export function SearchPage({
                       category={categories.find((c) => c.id === resource.category_id)}
                       onClick={() => setSelectedResource(resource)}
                       animationDelay={Math.min(idx * 30, 300)}
+                      searchQuery={searchQuery}
                     />
                   ))}
                 </div>
@@ -474,6 +399,7 @@ export function SearchPage({
                 category={categories.find((c) => c.id === resource.category_id)}
                 onClick={() => setSelectedResource(resource)}
                 animationDelay={Math.min(idx * 30, 300)}
+                searchQuery={searchQuery}
               />
             ))}
             {filtered.length > 60 && (
@@ -606,12 +532,13 @@ function ToggleChip({ active, onClick, label }: { active: boolean; onClick: () =
 }
 
 function ResourceCard({
-  resource, category, onClick, animationDelay,
+  resource, category, onClick, animationDelay, searchQuery,
 }: {
   resource: ResourceWithCategory;
   category?: ResourceCategory;
   onClick: () => void;
   animationDelay: number;
+  searchQuery: string;
 }) {
   const Icon = category ? getCategoryIcon(category.icon) : Building2;
   const color = category ? getCategoryColor(category.color) : getCategoryColor('teal');
@@ -657,7 +584,9 @@ function ResourceCard({
       <div className="p-3.5 flex-1 flex flex-col">
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-display font-bold text-sm text-primary-800 leading-tight group-hover:text-primary-700 transition-colors line-clamp-2">
-            {resource.name}
+            {highlightSegments(resource.name, searchQuery).map((seg, i) =>
+              seg.match ? <mark key={i} className="bg-sage-200 text-primary-900 rounded px-0.5">{seg.text}</mark> : seg.text
+            )}
           </h3>
           {hasRating(resource.rating) ? (
             <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -666,7 +595,11 @@ function ResourceCard({
             </div>
           ) : null}
         </div>
-        <p className="mt-1 text-xs text-primary-500 line-clamp-2 leading-relaxed">{resource.description}</p>
+        <p className="mt-1 text-xs text-primary-500 line-clamp-2 leading-relaxed">
+          {highlightSegments(resource.description, searchQuery).map((seg, i) =>
+            seg.match ? <mark key={i} className="bg-sage-200 text-primary-900 rounded px-0.5">{seg.text}</mark> : seg.text
+          )}
+        </p>
         <div className="mt-2 space-y-1 text-[11px] text-primary-600 flex-1">
           <div className="flex items-center gap-1.5">
             <Clock className="w-3 h-3 text-primary-400" />
