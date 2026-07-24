@@ -76,7 +76,7 @@ export function Hero({ onSearch, onNavigate, categories, totalResources, totalCi
 
           <p className="mt-6 text-lg text-primary-600 leading-relaxed max-w-2xl mx-auto font-sans">
             Search in plain language for healthcare, food, transportation, and community resources
-            across Washington State - filtered to your insurance, language, and needs.
+            across Washington State, filtered to your insurance, language, and needs.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 max-w-2xl mx-auto">

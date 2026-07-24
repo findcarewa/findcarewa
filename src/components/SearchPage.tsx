@@ -1,11 +1,13 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import {
   Search, SlidersHorizontal, Star, MapPin, Clock, Check,
   Frown, Map as MapIcon, List, DollarSign,
-  Building2, Sparkles, Heart,
+  Building2, Sparkles, Heart, Brain, Warning, Stethoscope,
 } from './IconLib';
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
 import { hybridSearch, extractZip, featuredServices, type HybridFilters } from '../lib/searchEngine';
+import { fetchSymptoms, type Symptom } from '../lib/symptoms';
+import { analyzeQuery, reRank, type SemanticAnalysis } from '../lib/semanticSearch';
 import { useFavorites } from '../lib/favorites';
 import { useAuth } from '../lib/auth';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
@@ -26,6 +28,7 @@ export function SearchPage({
   resources, categories, initialQuery, initialCategorySlug, initialCity, onNavigate,
 }: SearchPageProps) {
   const [search, setSearch] = useState(initialQuery || '');
+  const deferredSearch = useDeferredValue(search);
   const [zipFilter, setZipFilter] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | undefined>(initialCategorySlug);
   const [county, setCounty] = useState('');
@@ -33,6 +36,23 @@ export function SearchPage({
   const [view, setView] = useState<'list' | 'map'>('list');
   const [showFilters, setShowFilters] = useState(false);
   const [selectedResource, setSelectedResource] = useState<ResourceWithCategory | null>(null);
+  const [symptoms, setSymptoms] = useState<Symptom[]>([]);
+  const [semanticAnalysis, setSemanticAnalysis] = useState<SemanticAnalysis | null>(null);
+
+  // Load symptoms DB for semantic search enhancement
+  useEffect(() => {
+    fetchSymptoms().then(setSymptoms).catch(() => {});
+  }, []);
+
+  // Semantic analysis runs in a separate effect to avoid re-computing on every filter toggle.
+  // Uses deferred search so typing stays responsive while analysis runs.
+  useEffect(() => {
+    if (!deferredSearch || deferredSearch.trim().length < 2 || symptoms.length === 0) {
+      setSemanticAnalysis(null);
+      return;
+    }
+    setSemanticAnalysis(analyzeQuery(deferredSearch, symptoms));
+  }, [deferredSearch, symptoms]);
 
   // Filter toggles
   const [acceptsMedicaid, setAcceptsMedicaid] = useState(false);
@@ -54,11 +74,11 @@ export function SearchPage({
   useEffect(() => { if (initialCategorySlug !== undefined) setActiveCategory(initialCategorySlug); }, [initialCategorySlug]);
   useEffect(() => { if (initialCity !== undefined) setCity(initialCity); }, [initialCity]);
 
-  // If the user types a 5-digit zip anywhere in the main search box, extract it
-  // into the zip filter automatically so "dental 98104" just works.
+  // Zip is derived purely from the main search bar. Typing "dental 98104"
+  // auto-extracts 98104 as the zip filter. Clearing the zip from the text clears the filter.
   useEffect(() => {
     const z = extractZip(search);
-    if (z && z !== zipFilter) setZipFilter(z);
+    setZipFilter(z ?? '');
   }, [search]);
 
   const counties = useMemo(
@@ -73,13 +93,9 @@ export function SearchPage({
   }, [resources]);
 
   const filtered = useMemo(() => {
-    // Single unified deterministic search. The main search box acts like a
-    // Google query: type "dental 98104" or "food bank Seattle" and it filters
-    // by zip (if present) + exact token matching across all searchable fields.
-    // No AI/LLM — fully deterministic.
     const filters: HybridFilters = {
       zip: zipFilter || undefined,
-      text: search || undefined,
+      text: deferredSearch || undefined,
       categorySlug: activeCategory,
       city: city || undefined,
       county: county || undefined,
@@ -97,10 +113,10 @@ export function SearchPage({
       language: language || undefined,
     };
 
-    let result = hybridSearch(resources, filters);
+    let results = hybridSearch(resources, filters);
+    if (semanticAnalysis) results = reRank(results, semanticAnalysis);
 
-    // Sort: open now first, then rating
-    return [...result].sort((a, b) => {
+    return [...results].sort((a, b) => {
       const aOpen = isOpenNow(a.hours) ? 1 : 0;
       const bOpen = isOpenNow(b.hours) ? 1 : 0;
       if (aOpen !== bOpen) return bOpen - aOpen;
@@ -108,7 +124,7 @@ export function SearchPage({
     });
   }, [resources, activeCategory, county, city, acceptsMedicaid, medicare, acceptsUninsured,
       slidingScale, freeOptions, free, telehealth, walkIns, appointmentsAvailable, openNow,
-      wheelchairAccessible, language, search, zipFilter]);
+      wheelchairAccessible, language, deferredSearch, zipFilter, semanticAnalysis]);
 
   const handleClear = () => {
     setSearch(''); setZipFilter('');
@@ -148,7 +164,7 @@ export function SearchPage({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name, service, or city — e.g., dental 98104, food bank Seattle"
+                placeholder="Search by name, service, or city, e.g., dental 98104, food bank Seattle"
                 className="flex-1 bg-transparent text-sm text-primary-800 placeholder:text-primary-400 focus:outline-none py-2.5"
                 aria-label="Search for resources"
               />
@@ -165,32 +181,19 @@ export function SearchPage({
           </div>
         </div>
 
-        {/* Zip / Location filter — explicit, deterministic */}
-        <div className="mb-4 flex items-center gap-2">
-          <div className="flex items-center gap-2 flex-1 rounded-2xl bg-white border border-ink-200 shadow-soft focus-within:border-sage-400 focus-within:ring-4 focus-within:ring-sage-500/10 transition-all p-2">
-            <MapPin className="w-5 h-5 text-primary-500 flex-shrink-0 ml-1" />
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="\d{5}"
-              maxLength={5}
-              value={zipFilter}
-              onChange={(e) => setZipFilter(e.target.value.replace(/\D/g, '').slice(0, 5))}
-              placeholder="Zip code (e.g., 98104)"
-              className="flex-1 bg-transparent text-sm text-primary-800 placeholder:text-primary-400 focus:outline-none py-2.5"
-              aria-label="Filter by zip code"
-            />
-            {zipFilter && (
-              <button
-                type="button"
-                onClick={() => setZipFilter('')}
-                className="px-2 py-1 rounded-lg text-xs font-medium text-primary-500 hover:bg-cream-200 transition-colors flex-shrink-0"
-              >
-                Clear
-              </button>
-            )}
+        {/* Active zip indicator — zip is extracted from the main search bar */}
+        {zipFilter && (
+          <div className="mb-3">
+            <button
+              onClick={() => setSearch(search.replace(/\b\d{5}\b/g, '').trim())}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-50 border border-sage-200 text-xs font-medium text-sage-700 hover:bg-sage-100 transition-colors"
+            >
+              <MapPin className="w-3 h-3" />
+              Zip {zipFilter}
+              <span className="ml-1 text-sage-400">remove</span>
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Category pills */}
         <div className="flex gap-2 overflow-x-auto pb-2 mb-4 -mx-4 px-4 lg:mx-0 lg:px-0">
@@ -331,6 +334,75 @@ export function SearchPage({
           </div>
         )}
 
+        {/* Semantic interpretation panel */}
+        {semanticAnalysis && semanticAnalysis.intent !== 'keyword' && (
+          <div className={`mb-4 rounded-2xl border p-4 animate-fade-in ${
+            semanticAnalysis.redFlag
+              ? 'bg-danger-50 border-danger-200'
+              : 'bg-sage-50 border-sage-200'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                semanticAnalysis.redFlag ? 'bg-danger-100' : 'bg-sage-100'
+              }`}>
+                {semanticAnalysis.redFlag ? (
+                  <Warning className="w-4 h-4 text-danger-600" />
+                ) : (
+                  <Brain className="w-4 h-4 text-sage-600" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                {semanticAnalysis.redFlag && (
+                  <p className="text-sm font-bold text-danger-700 mb-1">
+                    This may be an emergency. If life-threatening, call 911 now. For mental health crises, call 988.
+                  </p>
+                )}
+                <p className="text-xs text-primary-600 leading-relaxed">
+                  {semanticAnalysis.interpretation}
+                </p>
+                {semanticAnalysis.symptoms.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {semanticAnalysis.symptoms.slice(0, 3).map(({ symptom }) => (
+                      <button
+                        key={symptom.id}
+                        onClick={() => onNavigate({ name: 'symptom', slug: symptom.slug })}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                          symptom.red_flag
+                            ? 'bg-danger-100 text-danger-700 hover:bg-danger-200'
+                            : 'bg-white text-primary-600 hover:bg-sage-100 border border-ink-200'
+                        }`}
+                      >
+                        <Stethoscope className="w-3 h-3" />
+                        {symptom.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {semanticAnalysis.recommendedCategories.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {semanticAnalysis.recommendedCategories.slice(0, 5).map((catSlug) => {
+                      const cat = categories.find((c) => c.slug === catSlug);
+                      if (!cat) return null;
+                      const Icon = getCategoryIcon(cat.icon);
+                      const color = getCategoryColor(cat.color);
+                      return (
+                        <button
+                          key={catSlug}
+                          onClick={() => setActiveCategory(catSlug)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-white border border-ink-200 text-primary-600 hover:border-sage-300 transition-colors"
+                        >
+                          <Icon className="w-3 h-3" />
+                          {cat.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Results count */}
         <div className="mb-4 flex items-center justify-between">
           <p className="text-sm text-primary-500">
@@ -356,7 +428,7 @@ export function SearchPage({
                   Clear all filters
                 </button>
                 {zipFilter && (
-                  <button onClick={() => setZipFilter('')} className="px-4 py-2 rounded-lg bg-cream-200 text-primary-700 text-sm font-medium hover:bg-cream-300 transition-all duration-200 ease-out-expo">
+                  <button onClick={() => setSearch(search.replace(/\b\d{5}\b/g, '').trim())} className="px-4 py-2 rounded-lg bg-cream-200 text-primary-700 text-sm font-medium hover:bg-cream-300 transition-all duration-200 ease-out-expo">
                     Remove zip {zipFilter}
                   </button>
                 )}
@@ -480,8 +552,8 @@ function MapView({ resources }: {
         marker.bindPopup(`
           <div style="min-width:180px">
             <strong style="font-size:13px">${r.name}</strong><br/>
-            <span style="font-size:11px;color:#64748b">${cat?.name || 'Resource'} · ${r.city}</span><br/>
-            <a href="#/resource/${r.id}" style="font-size:12px;color:#0d9488">View details →</a>
+            <span style="font-size:11px;color:#64748b">${cat?.name || 'Resource'} \u00b7 ${r.city}</span><br/>
+            <a href="#/resource/${r.id}" style="font-size:12px;color:#0d9488">View details \u2192</a>
           </div>
         `);
         bounds.push([r.lat!, r.lng!]);
@@ -504,7 +576,7 @@ function MapView({ resources }: {
     <div className="rounded-2xl overflow-hidden border border-ink-200 shadow-soft">
       <div className="bg-white px-4 py-2.5 border-b border-ink-100 flex items-center gap-2">
         <MapPin className="w-4 h-4 text-primary-600" />
-        <span className="text-sm font-medium text-primary-700">Map view  -  {resources.length} resources</span>
+        <span className="text-sm font-medium text-primary-700">Map view · {resources.length} resources</span>
         <span className="text-xs text-primary-400 ml-auto">Click a marker for details</span>
       </div>
       <div ref={mapRef} className="h-[500px] w-full bg-cream-200" />

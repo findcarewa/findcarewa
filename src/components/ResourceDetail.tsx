@@ -17,6 +17,10 @@ import {
   isVirtualService, hasGoogleKey, PlaceResult,
 } from '../lib/resourceImages';
 import { PlacePhotoGallery } from './ResourceImage';
+import {
+  setPageMeta, injectPageSchema,
+  resourceDetailMeta, medicalClinicSchema, breadcrumbSchema,
+} from '../lib/seo';
 
 interface FacilityDetailProps {
   resource: ResourceWithCategory;
@@ -56,6 +60,17 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
     setShowGallery(false);
     setHeroErrored(false);
     setPlaceResult(null);
+
+    // ── SEO: set page meta + MedicalClinic schema ──
+    const cat = categories.find((c) => c.id === resource.category_id);
+    const meta = resourceDetailMeta(resource, cat);
+    setPageMeta(meta);
+    injectPageSchema('medicalClinic', medicalClinicSchema(resource, cat));
+    injectPageSchema('breadcrumb', breadcrumbSchema([
+      { name: 'Home', path: '/' },
+      { name: 'Search', path: '/#/search' },
+      { name: resource.name, path: `/#/resource/${resource.id}` },
+    ]));
 
     if (resource.photo_url) {
       setHeroSrc(resource.photo_url); setHeroKind('photo'); return;

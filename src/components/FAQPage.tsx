@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, HelpCircle, Phone, Search, Sparkles, Heart } from './IconLib';
 import type { Route } from '../lib/router';
+import { injectPageSchema, faqSchema } from '../lib/seo';
 
 interface FAQPageProps {
   onNavigate: (route: Route) => void;
@@ -124,6 +125,14 @@ export function FAQPage({ onNavigate }: FAQPageProps) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+
+  // ── SEO: inject FAQ schema for rich results ──
+  useEffect(() => {
+    injectPageSchema('faq', faqSchema(
+      FAQ_ITEMS.map((f) => ({ question: f.q, answer: f.a })),
+    ));
+    return () => { injectPageSchema('faq', null); };
+  }, []);
 
   const categories = Array.from(new Set(FAQ_ITEMS.map((f) => f.category)));
 

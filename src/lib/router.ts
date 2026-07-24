@@ -10,7 +10,11 @@ export type Route =
   | { name: 'about' }
   | { name: 'how-it-works' }
   | { name: 'saved' }
-  | { name: 'faq' };
+  | { name: 'faq' }
+  | { name: 'symptoms' }
+  | { name: 'symptom'; slug: string }
+  | { name: 'locations' }
+  | { name: 'location'; location: string; specialty?: string };
 
 function parseHash(): Route {
   const hash = window.location.hash.replace(/^#\/?/, '');
@@ -34,6 +38,13 @@ function parseHash(): Route {
     return { name: 'resource', id: segments[1] };
   }
 
+  if (segments[0] === 'locations') {
+    if (segments.length === 1) return { name: 'locations' };
+    if (segments.length >= 2) {
+      return { name: 'location', location: segments[1], specialty: segments[2] };
+    }
+  }
+
   if (segments[0] === 'request') return { name: 'request' };
   if (segments[0] === 'feedback') {
     return { name: 'feedback', resourceId: params.get('resource') || undefined };
@@ -42,6 +53,8 @@ function parseHash(): Route {
   if (segments[0] === 'saved') return { name: 'saved' };
   if (segments[0] === 'faq') return { name: 'faq' };
   if (segments[0] === 'how-it-works') return { name: 'how-it-works' };
+  if (segments[0] === 'symptoms') return { name: 'symptoms' };
+  if (segments[0] === 'symptom' && segments[1]) return { name: 'symptom', slug: segments[1] };
 
   return { name: 'home' };
 }
@@ -59,6 +72,11 @@ export function routeToHash(route: Route): string {
       return `#/search${qs ? '?' + qs : ''}`;
     }
     case 'resource': return `#/resource/${route.id}`;
+    case 'locations': return '#/locations';
+    case 'location': {
+      if (route.specialty) return `#/locations/${route.location}/${route.specialty}`;
+      return `#/locations/${route.location}`;
+    }
     case 'request': return '#/request';
     case 'feedback': {
       const params = new URLSearchParams();
@@ -70,6 +88,8 @@ export function routeToHash(route: Route): string {
     case 'how-it-works': return '#/how-it-works';
     case 'saved': return '#/saved';
     case 'faq': return '#/faq';
+    case 'symptoms': return '#/symptoms';
+    case 'symptom': return `#/symptom/${route.slug}`;
   }
 }
 
@@ -88,4 +108,22 @@ export function useRouter() {
   }, []);
 
   return { route, navigate };
+}
+
+// ─── Location slug helpers ────────────────────────────────────────────────────
+
+/** Convert a city or county name to a URL-safe slug. */
+export function toLocationSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** Convert a slug back to a display name (title case, spaces). */
+export function fromLocationSlug(slug: string): string {
+  return slug
+    .split('-')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }

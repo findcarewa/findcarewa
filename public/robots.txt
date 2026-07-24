@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /#/saved
+Disallow: /#/request
+Disallow: /#/feedback
+
+Sitemap: https://findcarewa.org/sitemap.xml

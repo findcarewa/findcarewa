@@ -8,6 +8,14 @@ import {
 } from './lib/supabase';
 import { useRouter } from './lib/router';
 import { roundDownFriendly } from './lib/format';
+import {
+  setPageMeta, injectSiteSchema, injectPageSchema,
+  homeMeta, searchMeta, mapMeta, aboutMeta, howItWorksMeta,
+  faqMeta, savedMeta, requestMeta, feedbackMeta,
+  symptomListMeta, symptomDetailMeta, resourceDetailMeta,
+  medicalWebPageSchema, faqSchema, medicalClinicSchema, breadcrumbSchema,
+  locationIndexMeta,
+} from './lib/seo';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { SearchPage } from './components/SearchPage';
@@ -16,6 +24,8 @@ import { RequestForm } from './components/RequestForm';
 import { FeedbackForm } from './components/FeedbackForm';
 import { HowItWorks } from './components/HowItWorks';
 import { FAQPage } from './components/FAQPage';
+import { SymptomsPage } from './components/SymptomsPage';
+import { SymptomDetail } from './components/SymptomDetail';
 import { SavedPage } from './components/SavedPage';
 import { AuthModal } from './components/AuthModal';
 import { AuthProvider } from './lib/auth';
@@ -23,6 +33,8 @@ import { FavoritesProvider } from './lib/favorites';
 import { AboutPage } from './components/AboutPage';
 import { Footer } from './components/Footer';
 import { HealthMap } from './components/HealthMap';
+import { LocationsIndexPage } from './components/LocationsIndexPage';
+import { LocationPage } from './components/LocationPage';
 
 export default function App() {
   const { route, navigate } = useRouter();
@@ -95,6 +107,133 @@ export default function App() {
   const handleSearch = useCallback((query: string) => {
     navigate({ name: 'search', query });
   }, [navigate]);
+
+  // ── SEO: inject persistent Organization + WebSite schema once ──────────
+  useEffect(() => {
+    injectSiteSchema();
+  }, []);
+
+  // ── SEO: update page metadata + JSON-LD on every route change ──────────
+  useEffect(() => {
+    let meta;
+    switch (route.name) {
+      case 'home':
+        meta = homeMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        injectPageSchema('breadcrumb', null);
+        break;
+      case 'search':
+        meta = searchMeta(route.query, route.categorySlug, route.city);
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        if (route.categorySlug) {
+          const cat = categories.find((c) => c.slug === route.categorySlug);
+          if (cat) {
+            injectPageSchema('breadcrumb', breadcrumbSchema([
+              { name: 'Home', path: '/' },
+              { name: 'Search', path: '/#/search' },
+              { name: cat.name, path: `/#/search?cat=${cat.slug}` },
+            ]));
+          }
+        } else {
+          injectPageSchema('breadcrumb', null);
+        }
+        break;
+      case 'map':
+        meta = mapMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        injectPageSchema('breadcrumb', null);
+        break;
+      case 'about':
+        meta = aboutMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        injectPageSchema('breadcrumb', breadcrumbSchema([
+          { name: 'Home', path: '/' },
+          { name: 'About', path: '/#/about' },
+        ]));
+        break;
+      case 'how-it-works':
+        meta = howItWorksMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        injectPageSchema('breadcrumb', breadcrumbSchema([
+          { name: 'Home', path: '/' },
+          { name: 'How It Works', path: '/#/how-it-works' },
+        ]));
+        break;
+      case 'faq':
+        meta = faqMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        // FAQ schema is injected by the FAQPage component itself
+        injectPageSchema('breadcrumb', breadcrumbSchema([
+          { name: 'Home', path: '/' },
+          { name: 'FAQ', path: '/#/faq' },
+        ]));
+        break;
+      case 'saved':
+        meta = savedMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        injectPageSchema('breadcrumb', null);
+        break;
+      case 'request':
+        meta = requestMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        injectPageSchema('breadcrumb', null);
+        break;
+      case 'feedback':
+        meta = feedbackMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        injectPageSchema('breadcrumb', null);
+        break;
+      case 'symptoms':
+        meta = symptomListMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        injectPageSchema('breadcrumb', breadcrumbSchema([
+          { name: 'Home', path: '/' },
+          { name: 'Symptoms', path: '/#/symptoms' },
+        ]));
+        break;
+      case 'locations':
+        meta = locationIndexMeta();
+        injectPageSchema('medicalWebPage', null);
+        injectPageSchema('medicalClinic', null);
+        injectPageSchema('faq', null);
+        // breadcrumb + itemList handled by LocationsIndexPage component
+        break;
+      case 'location':
+        // Meta + schema are set by LocationPage component (async data)
+        meta = locationIndexMeta();
+        break;
+      case 'symptom':
+        // Meta + schema are set by SymptomDetail component (async data)
+        meta = symptomListMeta();
+        break;
+      case 'resource':
+        // Meta + schema are set by ResourceDetail component (async data)
+        meta = searchMeta();
+        break;
+      default:
+        meta = homeMeta();
+    }
+    setPageMeta(meta);
+  }, [route, categories]);
 
   const totalResources = resources.length;
   const totalCities = new Set(resources.map((r) => r.city)).size;
@@ -219,12 +358,38 @@ export default function App() {
         {route.name === 'faq' && (
           <FAQPage onNavigate={navigate} />
         )}
+        {route.name === 'symptoms' && (
+          <SymptomsPage onNavigate={navigate} />
+        )}
+        {route.name === 'symptom' && (
+          <SymptomDetail
+            slug={route.slug}
+            resources={resources}
+            categories={categories}
+            onNavigate={navigate}
+          />
+        )}
         {route.name === 'about' && (
           <AboutPage
             onNavigate={navigate}
             totalResources={roundedResources}
             totalCities={totalCities}
             totalCounties={totalCounties}
+          />
+        )}
+        {route.name === 'locations' && (
+          <LocationsIndexPage
+            resources={resources}
+            onNavigate={navigate}
+          />
+        )}
+        {route.name === 'location' && (
+          <LocationPage
+            location={route.location}
+            specialty={route.specialty}
+            resources={resources}
+            categories={categories}
+            onNavigate={navigate}
           />
         )}
       </main>

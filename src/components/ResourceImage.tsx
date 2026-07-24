@@ -217,7 +217,7 @@ export function PlacePhotoGallery({ resource, name }: PlacePhotoGalleryProps) {
         <img
           key={active}
           src={photoSrc(photos[active], 1200)}
-          alt={`${name} — photo ${active + 1}`}
+          alt={`${name}, photo ${active + 1}`}
           className="w-full h-full object-cover"
           onError={(e) => { e.currentTarget.style.opacity = '0.3'; }}
           loading="lazy"

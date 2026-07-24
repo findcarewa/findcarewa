@@ -20,7 +20,7 @@ export function Footer({ onNavigate, totalResources }: FooterProps) {
             </div>
             <p className="mt-4 text-sm text-slate-300 max-w-md leading-relaxed font-serif-body">
               An AI-powered healthcare navigation platform connecting Washingtonians with
-              affordable, accessible care and community resources  -  {totalResources.toLocaleString()}+ entries statewide.
+              affordable, accessible care and community resources. {totalResources.toLocaleString()}+ entries statewide.
             </p>
             <div className="mt-4 flex items-center gap-1.5 text-xs text-slate-400">
               <MapPin className="w-3.5 h-3.5" />
@@ -31,8 +31,8 @@ export function Footer({ onNavigate, totalResources }: FooterProps) {
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-sage-300 mb-3 font-serif-body">Emergency Resources</h4>
             <ul className="space-y-2 text-sm">
-              <li><a href="tel:911" className="hover:text-white transition-colors flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> 911  -  Medical Emergency</a></li>
-              <li><a href="tel:988" className="hover:text-white transition-colors flex items-center gap-1.5"><Heart className="w-3.5 h-3.5" /> 988  -  Crisis Lifeline</a></li>
+              <li><a href="tel:911" className="hover:text-white transition-colors flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> 911 · Medical Emergency</a></li>
+              <li><a href="tel:988" className="hover:text-white transition-colors flex items-center gap-1.5"><Heart className="w-3.5 h-3.5" /> 988 · Crisis Lifeline</a></li>
               <li><a href="tel:12065262121" className="hover:text-white transition-colors flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> Poison Center</a></li>
             </ul>
           </div>
@@ -60,6 +60,12 @@ export function Footer({ onNavigate, totalResources }: FooterProps) {
               </li>
               <li>
                 <button onClick={() => onNavigate({ name: 'how-it-works' })} className="hover:text-white transition-colors">How It Works</button>
+              </li>
+              <li>
+                <button onClick={() => onNavigate({ name: 'symptoms' })} className="hover:text-white transition-colors">Symptom Guide</button>
+              </li>
+              <li>
+                <button onClick={() => onNavigate({ name: 'locations' })} className="hover:text-white transition-colors">Browse by Location</button>
               </li>
             </ul>
           </div>

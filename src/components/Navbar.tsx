@@ -44,6 +44,7 @@ export function Navbar({ route, onNavigate }: NavbarProps) {
   const navLinks: { label: string; route: Route; icon?: React.ReactNode }[] = [
     { label: 'Home',        route: { name: 'home' } },
     { label: 'Find Care',   route: { name: 'search' } },
+    { label: 'Symptoms',    route: { name: 'symptoms' } },
     { label: 'Health Map',  route: { name: 'map' }, icon: <PhMap size={15} weight="regular" /> },
     { label: 'How It Works',route: { name: 'how-it-works' } },
     { label: 'FAQ',         route: { name: 'faq' } },

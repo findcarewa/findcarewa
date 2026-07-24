@@ -2,14 +2,14 @@
  * Resource image resolution.
  *
  * Priority chain per resource:
- *  1. photo_url column \u2014 manual override
- *  2. Google Places photo \u2014 physical locations
+ *  1. photo_url column — manual override
+ *  2. Google Places photo — physical locations
  *     - Calls Places Text Search or Place Details directly from the browser
  *       using VITE_GOOGLE_MAPS_API_KEY
  *     - Photo bytes proxied through edge function to avoid key exposure in
  *       img src URLs and to add long-lived cache headers
- *  3. Clearbit logo \u2014 virtual/hotline services (domain column)
- *  4. Category SVG avatar \u2014 always works, instant, zero network
+ *  3. Clearbit logo — virtual/hotline services (domain column)
+ *  4. Category SVG avatar — always works, instant, zero network
  */
 
 import type { ResourceWithCategory } from './supabase';
@@ -20,7 +20,7 @@ const GOOGLE_KEY   = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefi
 
 export const PLACE_PHOTOS_FN = `${SUPABASE_URL}/functions/v1/place-photos`;
 
-// \u2500\u2500\u2500 Types \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface PlacePhoto {
   reference: string;       // photo_reference (may be empty when using Maps JS)
@@ -36,18 +36,18 @@ export interface PlaceResult {
   name: string | null;
 }
 
-// \u2500\u2500\u2500 Module-scope caches (survive component re-renders) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Module-scope caches (survive component re-renders) ───────────────────────
 
 const resultCache = new Map<string, PlaceResult>();
 const inFlight    = new Map<string, Promise<PlaceResult>>();
 
-// \u2500\u2500\u2500 Key check \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Key check ────────────────────────────────────────────────────────────────
 
 export function hasGoogleKey(): boolean {
   return Boolean(GOOGLE_KEY && GOOGLE_KEY.trim().length > 0);
 }
 
-// \u2500\u2500\u2500 Virtual/hotline heuristic \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Virtual/hotline heuristic ────────────────────────────────────────────────
 
 const VIRTUAL_SLUGS = new Set(['crisis-line']);
 
@@ -58,7 +58,7 @@ export function isVirtualService(resource: ResourceWithCategory): boolean {
   return addr.startsWith('various') || addr.startsWith('po box') || addr.startsWith('p.o. box');
 }
 
-// \u2500\u2500\u2500 Query builder \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Query builder ────────────────────────────────────────────────────────────
 
 export function buildPlacesQuery(resource: ResourceWithCategory): string {
   const cleanName = resource.name
@@ -68,7 +68,7 @@ export function buildPlacesQuery(resource: ResourceWithCategory): string {
   return `${cleanName} ${resource.city} WA`;
 }
 
-// \u2500\u2500\u2500 Shared PlacesService (hidden map div) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Shared PlacesService (hidden map div) ────────────────────────────────────
 
 let _placesService: google.maps.places.PlacesService | null = null;
 
@@ -81,7 +81,7 @@ function getPlacesService(): google.maps.places.PlacesService | null {
   return _placesService;
 }
 
-// \u2500\u2500\u2500 Core Google Places fetch (Maps JS API \u2014 browser only) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Core Google Places fetch (Maps JS API — browser only) ───────────────────
 
 async function fetchFromGoogle(resource: ResourceWithCategory): Promise<PlaceResult> {
   const empty: PlaceResult = { placeId: null, photos: [], name: null };
@@ -102,7 +102,7 @@ async function fetchFromGoogle(resource: ResourceWithCategory): Promise<PlaceRes
         {
           query,
           location: new google.maps.LatLng(47.4009, -120.5015),
-          radius: 400000, // ~250 miles \u2014 covers all of WA
+          radius: 400000, // ~250 miles — covers all of WA
         },
         (results, status) => {
           if (status === google.maps.places.PlacesServiceStatus.OK && results?.length) {
@@ -116,7 +116,7 @@ async function fetchFromGoogle(resource: ResourceWithCategory): Promise<PlaceRes
 
     if (!placeId) return empty;
 
-    // Step 2: Place Details \u2192 photos
+    // Step 2: Place Details → photos
     const detail = await new Promise<google.maps.places.PlaceResult | null>((resolve) => {
       svc.getDetails(
         { placeId, fields: ['photos', 'name', 'rating'] },
@@ -195,11 +195,11 @@ export async function fetchPlacePhotos(placeId: string): Promise<PlacePhoto[]> {
   } catch { return []; }
 }
 
-// \u2500\u2500\u2500 Photo URL \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Photo URL ────────────────────────────────────────────────────────────────
 
 /**
  * Get a usable photo URL from a PlacePhoto.
- * - Maps JS path (_obj present): uses PlacePhoto.getUrl() \u2014 no proxy needed
+ * - Maps JS path (_obj present): uses PlacePhoto.getUrl() — no proxy needed
  * - REST path: routes through edge-function proxy for caching
  */
 export function placePhotoUrl(photo: PlacePhoto | string, maxWidth = 800): string {
@@ -217,14 +217,14 @@ export function placePhotoUrl(photo: PlacePhoto | string, maxWidth = 800): strin
   return `${PLACE_PHOTOS_FN}?ref=${encodeURIComponent(photo)}&w=${maxWidth}`;
 }
 
-// \u2500\u2500\u2500 Clearbit logo \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Clearbit logo ────────────────────────────────────────────────────────────
 
 export function clearbitLogoUrl(domain: string): string {
   return `https://logo.clearbit.com/${domain}?size=128`;
 }
 
-// \u2500\u2500\u2500 Website screenshot providers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-// Multiple providers in a fallback chain \u2014 if one is blocked by the target site
+// ─── Website screenshot providers ────────────────────────────────────────────
+// Multiple providers in a fallback chain — if one is blocked by the target site
 // or returns a placeholder, the next is tried. All are keyless/free-tier.
 
 export type ScreenshotProvider = 'mshots' | 'thumio' | 'microlink';
@@ -237,21 +237,21 @@ export function websiteScreenshotUrl(
   const url = `https://${domain}`;
   switch (provider) {
     case 'thumio':
-      // thum.io \u2014 keyless, real browser render. Width modifier prefix.
+      // thum.io — keyless, real browser render. Width modifier prefix.
       return `https://image.thum.io/get/width/${width}/noanimate/${url}`;
     case 'microlink':
-      // microlink.io \u2014 free tier (50/day, no key). Returns full-page screenshot.
+      // microlink.io — free tier (50/day, no key). Returns full-page screenshot.
       return `https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true&meta=false&embed=screenshot.url&viewport.${width}=x${Math.round(width * 0.625)}`;
     case 'mshots':
     default:
-      // WordPress mshots \u2014 keyless, widely cached.
+      // WordPress mshots — keyless, widely cached.
       return `https://s0.wordpress.com/mshots/v1/${encodeURIComponent(url)}?w=${width}&h=${Math.round(width * 0.625)}`;
   }
 }
 
 export const SCREENSHOT_PROVIDERS: ScreenshotProvider[] = ['mshots', 'thumio', 'microlink'];
 
-// \u2500\u2500\u2500 Category SVG avatars \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Category SVG avatars ─────────────────────────────────────────────────────
 
 interface AvatarSpec { bg: string; fg: string; icon: string }
 
@@ -296,7 +296,7 @@ export function getAvatarBgColor(slug: string | null | undefined): string {
   return CATEGORY_AVATARS[slug ?? '']?.bg ?? DEFAULT_AVATAR.bg;
 }
 
-// \u2500\u2500\u2500 Public meta \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Public meta ──────────────────────────────────────────────────────────────
 
 export interface ResourceImageMeta {
   src: string;

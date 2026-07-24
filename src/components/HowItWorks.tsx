@@ -22,7 +22,7 @@ export function HowItWorks({ onNavigate, categories }: HowItWorksProps) {
     {
       icon: Filter,
       title: 'AI parses & filters',
-      description: 'We extract the category, language, insurance, location, and service type from your search  -  no menus, no guessing.',
+      description: 'We extract the category, language, insurance, location, and service type from your search. No menus, no guessing.',
       color: 'secondary',
     },
     {
@@ -34,7 +34,7 @@ export function HowItWorks({ onNavigate, categories }: HowItWorksProps) {
     {
       icon: Phone,
       title: 'Connect directly',
-      description: 'Call, get directions, or visit the website  -  all from one place. Cost estimator helps you understand what\'ll pay.',
+      description: 'Call, get directions, or visit the website, all from one place. Cost estimator helps you understand what you\'ll pay.',
       color: 'success',
     },
   ];
@@ -62,7 +62,7 @@ export function HowItWorks({ onNavigate, categories }: HowItWorksProps) {
             Find care in four steps
           </h1>
           <p className="mt-4 text-lg text-primary-600 max-w-2xl mx-auto">
-            No insurance jargon, no phone-tree mazes. Just clear guidance and real resources ready to help  -  all across Washington State.
+            No insurance jargon, no phone-tree mazes. Just clear guidance and real resources ready to help, all across Washington State.
           </p>
         </div>
 

@@ -42,7 +42,7 @@ export function formatCost(min: number, max: number, free?: boolean, slidingScal
   if (min === 0 && max === 0) return 'Cost varies';
   if (min === 0) return `Up to ${max}`;
   if (min === max) return `~${min}`;
-  return `${min} \u2013 ${max}`;
+  return `${min} – ${max}`;
 }
 
 export function formatLanguages(langs: string[]): string {
@@ -106,7 +106,7 @@ export function estimateCost(
 
 /**
  * Rounds a count down to a "friendly" rounded number for display.
- * 747 \u2192 700, 1258 \u2192 1200, 42 \u2192 40, 8 \u2192 8 (small numbers stay exact).
+ * 747 → 700, 1258 → 1200, 42 → 40, 8 → 8 (small numbers stay exact).
  */
 export function roundDownFriendly(n: number): number {
   if (n <= 20) return n;
