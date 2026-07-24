@@ -88,7 +88,7 @@ export function SearchPage({
   }, [resources]);
 
   const filtered = useMemo(() => {
-    const filters: HybridFilters = {
+    const filters: SearchFilters = {
       zip: zipFilter || undefined,
       text: deferredSearch || undefined,
       categorySlug: activeCategory,
@@ -381,7 +381,7 @@ export function SearchPage({
                       category={categories.find((c) => c.id === resource.category_id)}
                       onClick={() => setSelectedResource(resource)}
                       animationDelay={Math.min(idx * 30, 300)}
-                      searchQuery={searchQuery}
+                      searchQuery={deferredSearch}
                     />
                   ))}
                 </div>
@@ -399,7 +399,7 @@ export function SearchPage({
                 category={categories.find((c) => c.id === resource.category_id)}
                 onClick={() => setSelectedResource(resource)}
                 animationDelay={Math.min(idx * 30, 300)}
-                searchQuery={searchQuery}
+                searchQuery={deferredSearch}
               />
             ))}
             {filtered.length > 60 && (

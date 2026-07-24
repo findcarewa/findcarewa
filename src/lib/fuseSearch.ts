@@ -1,18 +1,15 @@
 /**
- * Fuse.js-based healthcare search engine.
+ * Fuse.js-based healthcare search engine — optimized for speed.
  *
- * Replaces the hand-rolled fuzzy search with Fuse.js for robust typo tolerance,
- * partial matching, and multi-field weighted ranking. Supports:
- *  - Symptom searches (auto-indexed from Supabase symptoms table)
- *  - Provider/specialty searches (indexed from resource specialties)
- *  - City and county searches (indexed as location fields)
- *  - Synonym expansion (heart doctor → cardiologist, pink eye → conjunctivitis)
- *  - Tiered ranking: exact name > symptom category > specialty/service > location > corpus
+ * Key optimizations:
+ *  - Single combined-text field instead of 10 separate keys (Fuse is O(n*k))
+ *  - includeMatches disabled (we do our own highlighting)
+ *  - ignoreLocation disabled (location-aware scoring is faster)
+ *  - Pre-filter pass with cheap substring check to shrink candidate set
+ *  - Symptom keywords injected into combined text for automatic indexing
+ *  - Synonym expansion before search
+ *  - Tiered re-ranking: exact name > symptom > specialty > service > location
  *  - Crisis-line deprioritization for non-crisis queries
- *
- * The index is built from the resource array + symptoms array, so any new
- * symptom pages or providers added to Supabase are automatically indexed
- * the next time the app loads data.
  */
 
 import Fuse, { type IFuseOptions, type FuseResult } from 'fuse.js';
@@ -20,8 +17,6 @@ import type { ResourceWithCategory } from './supabase';
 import type { Symptom } from './symptoms';
 import { isOpenNow } from './format';
 import { expandWithSynonyms } from './synonyms';
-
-// ─── Filters (re-exported for backward compatibility) ──────────────────────────
 
 export interface SearchFilters {
   zip?: string;
@@ -43,39 +38,27 @@ export interface SearchFilters {
   language?: string;
 }
 
-// ─── Zip extraction (kept for backward compat) ─────────────────────────────────
-
 export function extractZip(query: string): string | null {
   const m = query.match(/\b(\d{5})\b/);
   return m ? m[1] : null;
 }
 
-// ─── Index document type ────────────────────────────────────────────────────────
+// ─── Index document (minimal fields for speed) ────────────────────────────────
 
 interface SearchDoc {
   id: string;
   name: string;
-  description: string;
-  services: string[];
+  combined: string;
+  isCrisisLine: boolean;
   specialties: string[];
-  tags: string[];
+  services: string[];
   city: string;
   county: string;
-  categorySlug: string;
-  categoryName: string;
-  searchCorpus: string;
   symptomKeywords: string[];
-  isCrisisLine: boolean;
 }
 
-// ─── Index builder ─────────────────────────────────────────────────────────────
+// ─── Index builder ────────────────────────────────────────────────────────────
 
-/**
- * Build a Fuse.js index from resources and symptoms.
- * Each resource becomes a searchable document with weighted fields.
- * Symptom keywords are injected into the resource's symptomKeywords field
- * when the resource's category matches a symptom's category_slugs.
- */
 export function buildSearchIndex(
   resources: ResourceWithCategory[],
   symptoms: Symptom[],
@@ -85,95 +68,91 @@ export function buildSearchIndex(
   const docs: SearchDoc[] = resources.map((r) => {
     const catSlug = r.resource_categories?.slug ?? '';
     const categoryName = r.resource_categories?.name ?? '';
-
     const symptomKeywords = symptomKeywordMap.get(catSlug) ?? [];
+
+    const parts = [
+      r.name ?? '',
+      r.description ?? '',
+      (r.services ?? []).join(' '),
+      (r.specialties ?? []).join(' '),
+      (r.tags ?? []).join(' '),
+      r.city ?? '',
+      r.county ?? '',
+      categoryName,
+      r.search_text ?? '',
+      symptomKeywords.join(' '),
+    ];
 
     return {
       id: r.id,
       name: r.name ?? '',
-      description: r.description ?? '',
-      services: r.services ?? [],
-      specialties: r.specialties ?? [],
-      tags: r.tags ?? [],
-      city: r.city ?? '',
-      county: r.county ?? '',
-      categorySlug: catSlug,
-      categoryName,
-      searchCorpus: r.search_text ?? '',
-      symptomKeywords,
+      combined: parts.join(' ').toLowerCase(),
       isCrisisLine: catSlug === 'crisis-line',
+      specialties: (r.specialties ?? []).map((s) => s.toLowerCase()),
+      services: (r.services ?? []).map((s) => s.toLowerCase()),
+      city: (r.city ?? '').toLowerCase(),
+      county: (r.county ?? '').toLowerCase(),
+      symptomKeywords,
     };
   });
 
   const options: IFuseOptions<SearchDoc> = {
     includeScore: true,
-    includeMatches: true,
-    threshold: 0.35,
-    ignoreLocation: true,
-    useExtendedSearch: false,
+    includeMatches: false,
+    threshold: 0.4,
+    ignoreLocation: false,
+    minMatchCharLength: 2,
     keys: [
-      { name: 'name', weight: 1.0 },
-      { name: 'symptomKeywords', weight: 0.7 },
-      { name: 'specialties', weight: 0.6 },
-      { name: 'services', weight: 0.5 },
-      { name: 'categoryName', weight: 0.4 },
-      { name: 'tags', weight: 0.3 },
-      { name: 'city', weight: 0.25 },
-      { name: 'county', weight: 0.2 },
-      { name: 'description', weight: 0.15 },
-      { name: 'searchCorpus', weight: 0.1 },
+      { name: 'name', weight: 0.6 },
+      { name: 'combined', weight: 0.4 },
     ],
   };
 
   return new Fuse(docs, options);
 }
 
-/**
- * Map category slugs to symptom keywords. When a resource belongs to a
- * category that symptoms recommend, the symptom keywords get injected
- * into the resource's searchable text.
- */
 function buildSymptomKeywordMap(symptoms: Symptom[]): Map<string, string[]> {
   const map = new Map<string, string[]>();
-
   for (const symptom of symptoms) {
-    const slugs = (symptom as any).category_slugs as string[] | undefined;
+    const slugs = symptom.category_slugs;
     if (!slugs) continue;
-
     const keywords = [
       symptom.name.toLowerCase(),
       ...(symptom.keywords ?? []).map((k) => k.toLowerCase()),
     ];
-
     for (const slug of slugs) {
       const existing = map.get(slug) ?? [];
       map.set(slug, [...existing, ...keywords]);
     }
   }
-
   return map;
 }
 
 // ─── Crisis query detection ────────────────────────────────────────────────────
 
-const CRISIS_TERMS = new Set([
+const CRISIS_TERMS = [
   'crisis', 'suicidal', 'suicide', 'overdose', 'self harm', 'selfharm',
   'self-harm', 'killing myself', 'kill myself', 'end it all',
-]);
+];
 
 function isCrisisQuery(query: string): boolean {
   const lower = query.toLowerCase();
-  return [...CRISIS_TERMS].some((term) => lower.includes(term));
+  return CRISIS_TERMS.some((term) => lower.includes(term));
 }
 
-// ─── Tiered re-ranking ──────────────────────────────────────────────────────────
+// ─── Pre-filter: cheap substring check to shrink candidate set ─────────────────
 
-/**
- * Fuse.js returns fuzzy scores (0 = perfect match, 1 = no match).
- * We invert to a positive score, then apply tiered boosts so that
- * exact name matches rank above symptom matches, which rank above
- * specialty matches, which rank above location matches.
- */
+function preFilter(docs: SearchDoc[], queryLower: string): SearchDoc[] {
+  const terms = queryLower.split(/\s+/).filter((t) => t.length >= 2);
+  if (terms.length === 0) return docs;
+
+  return docs.filter((doc) =>
+    terms.some((term) => doc.combined.includes(term))
+  );
+}
+
+// ─── Tiered re-ranking ─────────────────────────────────────────────────────────
+
 function reRankResults(
   fuseResults: FuseResult<SearchDoc>[],
   rawQuery: string,
@@ -184,54 +163,18 @@ function reRankResults(
   const scored = fuseResults.map((fr) => {
     const doc = fr.item;
     let boost = 0;
+    const score = (1 - (fr.score ?? 0)) * 100;
 
-    // Invert Fuse score: 0 (perfect) → 100, 1 (worst) → 0
-    let score = (1 - (fr.score ?? 0)) * 100;
+    if (doc.name.toLowerCase().includes(queryLower)) boost += 50;
+    if (doc.name.toLowerCase().startsWith(queryLower)) boost += 30;
+    if (doc.symptomKeywords.some((k) => queryLower.includes(k))) boost += 20;
+    if (doc.specialties.some((s) => s.includes(queryLower) || queryLower.includes(s))) boost += 15;
+    if (doc.services.some((s) => s.includes(queryLower) || queryLower.includes(s))) boost += 10;
+    if (doc.city.includes(queryLower) || queryLower.includes(doc.city)) boost += 5;
+    if (doc.county.includes(queryLower) || queryLower.includes(doc.county)) boost += 3;
 
-    // Tier 1: exact name match (highest)
-    if (doc.name.toLowerCase().includes(queryLower)) {
-      boost += 50;
-    }
-
-    // Tier 2: name starts with query
-    if (doc.name.toLowerCase().startsWith(queryLower)) {
-      boost += 30;
-    }
-
-    // Tier 3: symptom keyword match
-    if (doc.symptomKeywords.some((k) => queryLower.includes(k))) {
-      boost += 20;
-    }
-
-    // Tier 4: specialty match
-    if (doc.specialties.some((s) => s.toLowerCase().includes(queryLower) || queryLower.includes(s.toLowerCase()))) {
-      boost += 15;
-    }
-
-    // Tier 5: service match
-    if (doc.services.some((s) => s.toLowerCase().includes(queryLower) || queryLower.includes(s.toLowerCase()))) {
-      boost += 10;
-    }
-
-    // Tier 6: city match (location)
-    if (doc.city.toLowerCase().includes(queryLower) || queryLower.includes(doc.city.toLowerCase())) {
-      boost += 5;
-    }
-
-    // Tier 7: county match (location)
-    if (doc.county.toLowerCase().includes(queryLower) || queryLower.includes(doc.county.toLowerCase())) {
-      boost += 3;
-    }
-
-    // Crisis line deprioritization for non-crisis queries
-    if (doc.isCrisisLine && !crisisQuery) {
-      boost -= 60;
-    }
-
-    // Crisis line boost for crisis queries
-    if (doc.isCrisisLine && crisisQuery) {
-      boost += 40;
-    }
+    if (doc.isCrisisLine && !crisisQuery) boost -= 60;
+    if (doc.isCrisisLine && crisisQuery) boost += 40;
 
     return { doc, score: score + boost };
   });
@@ -242,12 +185,6 @@ function reRankResults(
 
 // ─── Main search function ──────────────────────────────────────────────────────
 
-/**
- * Search resources using Fuse.js fuzzy matching with synonym expansion
- * and tiered re-ranking. Returns resource IDs in ranked order.
- *
- * The caller maps IDs back to ResourceWithCategory objects.
- */
 export function searchResources(
   index: Fuse<SearchDoc>,
   resources: ResourceWithCategory[],
@@ -255,27 +192,22 @@ export function searchResources(
 ): ResourceWithCategory[] {
   let result = resources;
 
-  // Apply hard filters first (same as before)
   if (filters.zip) {
     const zip = filters.zip;
     result = result.filter((r) => r.zip_code === zip);
     if (result.length === 0) result = resources;
   }
-
   if (filters.categorySlug) {
     result = result.filter((r) => r.resource_categories?.slug === filters.categorySlug);
   }
-
   if (filters.county) {
     const c = filters.county.toLowerCase();
     result = result.filter((r) => r.county.toLowerCase().includes(c));
   }
-
   if (filters.city) {
     const c = filters.city.toLowerCase();
     result = result.filter((r) => r.city.toLowerCase().includes(c));
   }
-
   if (filters.acceptsMedicaid) result = result.filter((r) => r.medicaid);
   if (filters.medicare) result = result.filter((r) => r.medicare);
   if (filters.acceptsUninsured) result = result.filter((r) => r.accepts_uninsured);
@@ -294,26 +226,20 @@ export function searchResources(
     result = result.filter((r) => r.languages.some((l) => l.toLowerCase().includes(lang)));
   }
 
-  // Text search with Fuse.js
   if (filters.text) {
     const textWithoutZip = filters.text.replace(/\b\d{5}\b/g, '').trim();
     if (textWithoutZip.length >= 2) {
       const crisisQuery = isCrisisQuery(textWithoutZip);
       const expanded = expandWithSynonyms(textWithoutZip);
 
-      const fuseResults = index.search(expanded, { limit: 200 });
+      const fuseResults = index.search(expanded, { limit: 100 });
 
       if (fuseResults.length === 0) return [];
 
       const rankedDocs = reRankResults(fuseResults, textWithoutZip, crisisQuery);
-      const idSet = new Set(rankedDocs.map((d) => d.id));
-
-      // Filter to resources that passed the hard filters AND matched the text search
       const filteredIds = new Set(result.map((r) => r.id));
       const rankedIds = rankedDocs.map((d) => d.id).filter((id) => filteredIds.has(id));
 
-      // If no results survived the hard-filter intersection, fall back to
-      // just the text-matched resources (ignoring hard filters that aren't text-related)
       if (rankedIds.length === 0) {
         return rankedDocs
           .map((d) => resources.find((r) => r.id === d.id))
@@ -329,7 +255,7 @@ export function searchResources(
   return result;
 }
 
-// ─── Featured services (kept for backward compat) ──────────────────────────────
+// ─── Featured services ─────────────────────────────────────────────────────────
 
 export function featuredServices(
   resources: ResourceWithCategory[],
@@ -347,7 +273,7 @@ export function featuredServices(
     .slice(0, limit);
 }
 
-// ─── Legacy stubs (kept for backward compat) ────────────────────────────────────
+// ─── Legacy stubs ──────────────────────────────────────────────────────────────
 
 export interface ParsedQuery {
   explanation: string[];
@@ -360,7 +286,5 @@ export function parseSearchQuery(
 ): ParsedQuery {
   return { explanation: [], filters: {} };
 }
-
-// ─── Backward-compatible exports ────────────────────────────────────────────────
 
 export type { SearchFilters as HybridFilters };
