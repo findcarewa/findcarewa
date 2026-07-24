@@ -48,13 +48,21 @@ export function extractZip(query: string): string | null {
 interface SearchDoc {
   id: string;
   name: string;
-  combined: string;
-  isCrisisLine: boolean;
-  specialties: string[];
-  services: string[];
+  description: string;
+  services: string;
+  specialties: string;
+  tags: string;
   city: string;
   county: string;
-  symptomKeywords: string[];
+  categoryName: string;
+  searchText: string;
+  symptomKeywords: string;
+  isCrisisLine: boolean;
+  specialtiesArr: string[];
+  servicesArr: string[];
+  cityLower: string;
+  countyLower: string;
+  symptomKeywordsArr: string[];
 }
 
 // ─── Index builder ────────────────────────────────────────────────────────────
@@ -70,41 +78,43 @@ export function buildSearchIndex(
     const categoryName = r.resource_categories?.name ?? '';
     const symptomKeywords = symptomKeywordMap.get(catSlug) ?? [];
 
-    const parts = [
-      r.name ?? '',
-      r.description ?? '',
-      (r.services ?? []).join(' '),
-      (r.specialties ?? []).join(' '),
-      (r.tags ?? []).join(' '),
-      r.city ?? '',
-      r.county ?? '',
-      categoryName,
-      r.search_text ?? '',
-      symptomKeywords.join(' '),
-    ];
-
     return {
       id: r.id,
-      name: r.name ?? '',
-      combined: parts.join(' ').toLowerCase(),
-      isCrisisLine: catSlug === 'crisis-line',
-      specialties: (r.specialties ?? []).map((s) => s.toLowerCase()),
-      services: (r.services ?? []).map((s) => s.toLowerCase()),
+      name: (r.name ?? '').toLowerCase(),
+      description: (r.description ?? '').toLowerCase(),
+      services: (r.services ?? []).join(' ').toLowerCase(),
+      specialties: (r.specialties ?? []).join(' ').toLowerCase(),
+      tags: (r.tags ?? []).join(' ').toLowerCase(),
       city: (r.city ?? '').toLowerCase(),
       county: (r.county ?? '').toLowerCase(),
-      symptomKeywords,
+      categoryName: categoryName.toLowerCase(),
+      searchText: (r.search_text ?? '').toLowerCase(),
+      symptomKeywords: symptomKeywords.join(' ').toLowerCase(),
+      isCrisisLine: catSlug === 'crisis-line',
+      specialtiesArr: (r.specialties ?? []).map((s) => s.toLowerCase()),
+      servicesArr: (r.services ?? []).map((s) => s.toLowerCase()),
+      cityLower: (r.city ?? '').toLowerCase(),
+      countyLower: (r.county ?? '').toLowerCase(),
+      symptomKeywordsArr: symptomKeywords,
     };
   });
 
   const options: IFuseOptions<SearchDoc> = {
     includeScore: true,
     includeMatches: false,
-    threshold: 0.4,
-    ignoreLocation: false,
+    threshold: 0.35,
+    ignoreLocation: true,
     minMatchCharLength: 2,
     keys: [
-      { name: 'name', weight: 0.6 },
-      { name: 'combined', weight: 0.4 },
+      { name: 'name', weight: 0.35 },
+      { name: 'specialties', weight: 0.2 },
+      { name: 'services', weight: 0.15 },
+      { name: 'symptomKeywords', weight: 0.1 },
+      { name: 'tags', weight: 0.07 },
+      { name: 'city', weight: 0.05 },
+      { name: 'county', weight: 0.04 },
+      { name: 'description', weight: 0.02 },
+      { name: 'categoryName', weight: 0.02 },
     ],
   };
 
@@ -147,7 +157,18 @@ function preFilter(docs: SearchDoc[], queryLower: string): SearchDoc[] {
   if (terms.length === 0) return docs;
 
   return docs.filter((doc) =>
-    terms.some((term) => doc.combined.includes(term))
+    terms.some((term) =>
+      doc.name.includes(term) ||
+      doc.description.includes(term) ||
+      doc.services.includes(term) ||
+      doc.specialties.includes(term) ||
+      doc.tags.includes(term) ||
+      doc.city.includes(term) ||
+      doc.county.includes(term) ||
+      doc.categoryName.includes(term) ||
+      doc.searchText.includes(term) ||
+      doc.symptomKeywords.includes(term)
+    )
   );
 }
 
@@ -165,13 +186,13 @@ function reRankResults(
     let boost = 0;
     const score = (1 - (fr.score ?? 0)) * 100;
 
-    if (doc.name.toLowerCase().includes(queryLower)) boost += 50;
-    if (doc.name.toLowerCase().startsWith(queryLower)) boost += 30;
-    if (doc.symptomKeywords.some((k) => queryLower.includes(k))) boost += 20;
-    if (doc.specialties.some((s) => s.includes(queryLower) || queryLower.includes(s))) boost += 15;
-    if (doc.services.some((s) => s.includes(queryLower) || queryLower.includes(s))) boost += 10;
-    if (doc.city.includes(queryLower) || queryLower.includes(doc.city)) boost += 5;
-    if (doc.county.includes(queryLower) || queryLower.includes(doc.county)) boost += 3;
+    if (doc.name.includes(queryLower)) boost += 50;
+    if (doc.name.startsWith(queryLower)) boost += 30;
+    if (doc.symptomKeywordsArr.some((k) => queryLower.includes(k))) boost += 20;
+    if (doc.specialtiesArr.some((s) => s.includes(queryLower) || queryLower.includes(s))) boost += 15;
+    if (doc.servicesArr.some((s) => s.includes(queryLower) || queryLower.includes(s))) boost += 10;
+    if (doc.cityLower.includes(queryLower) || queryLower.includes(doc.cityLower)) boost += 5;
+    if (doc.countyLower.includes(queryLower) || queryLower.includes(doc.countyLower)) boost += 3;
 
     if (doc.isCrisisLine && !crisisQuery) boost -= 60;
     if (doc.isCrisisLine && crisisQuery) boost += 40;
@@ -232,11 +253,40 @@ export function searchResources(
       const crisisQuery = isCrisisQuery(textWithoutZip);
       const expanded = expandWithSynonyms(textWithoutZip);
 
-      const fuseResults = index.search(expanded, { limit: 100 });
+      // Split into individual terms so Fuse searches each word independently
+      // (otherwise the entire expanded string is treated as one fuzzy phrase)
+      const terms = expanded
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => t.length >= 2);
 
-      if (fuseResults.length === 0) return [];
+      // Search each term and merge: keep best score per document
+      const bestScoreByDoc = new Map<string, number>();
+      const docMap = new Map<string, SearchDoc>();
 
-      const rankedDocs = reRankResults(fuseResults, textWithoutZip, crisisQuery);
+      for (const term of terms) {
+        const termResults = index.search(term, { limit: 50 });
+        for (const tr of termResults) {
+          const docId = tr.item.id;
+          const fuseScore = 1 - (tr.score ?? 0); // higher = better
+          const prev = bestScoreByDoc.get(docId) ?? 0;
+          if (fuseScore > prev) {
+            bestScoreByDoc.set(docId, fuseScore);
+            docMap.set(docId, tr.item);
+          }
+        }
+      }
+
+      if (docMap.size === 0) return [];
+
+      // Build pseudo FuseResult array for reRank
+      const allDocs = Array.from(docMap.values());
+      const pseudoResults = allDocs.map((doc) => ({
+        item: doc,
+        score: 1 - (bestScoreByDoc.get(doc.id) ?? 0),
+      }));
+
+      const rankedDocs = reRankResults(pseudoResults, textWithoutZip, crisisQuery);
       const filteredIds = new Set(result.map((r) => r.id));
       const rankedIds = rankedDocs.map((d) => d.id).filter((id) => filteredIds.has(id));
 
