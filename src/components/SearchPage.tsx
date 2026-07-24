@@ -116,6 +116,13 @@ export function SearchPage({
     let results = hybridSearch(resources, filters);
     if (semanticAnalysis) results = reRank(results, semanticAnalysis);
 
+    // When there's a semantic analysis (symptom/intent detected), preserve the
+    // semantic ranking — don't override it with open-now + rating. Only apply
+    // the open-now + rating sort for plain keyword searches with no semantic signal.
+    if (semanticAnalysis && semanticAnalysis.intent !== 'keyword') {
+      return results;
+    }
+
     return [...results].sort((a, b) => {
       const aOpen = isOpenNow(a.hours) ? 1 : 0;
       const bOpen = isOpenNow(b.hours) ? 1 : 0;

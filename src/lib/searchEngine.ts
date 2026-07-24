@@ -371,21 +371,21 @@ interface SymptomMapping {
 
 const SYMPTOM_MAPPINGS: SymptomMapping[] = [
   // Cardiac — emergency
-  { match: 'chest pain', categories: ['hospital', 'crisis-line'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
-  { match: 'chest tightness', categories: ['hospital', 'crisis-line'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
-  { match: 'chest pressure', categories: ['hospital', 'crisis-line'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
-  { match: 'heart attack', categories: ['hospital', 'crisis-line'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
+  { match: 'chest pain', categories: ['hospital'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
+  { match: 'chest tightness', categories: ['hospital'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
+  { match: 'chest pressure', categories: ['hospital'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
+  { match: 'heart attack', categories: ['hospital'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
   { match: 'palpitations', categories: ['hospital', 'primary-care'], keywords: ['cardiac', 'cardiology'] },
   // Respiratory
-  { match: 'shortness of breath', categories: ['hospital', 'primary-care'], keywords: ['respiratory', 'pulmonary', 'emergency'], redFlag: true },
+  { match: 'shortness of breath', categories: ['hospital', 'primary-care'], keywords: ['respiratory', 'pulmonary'], redFlag: true },
   { match: 'breathing problem', categories: ['hospital', 'primary-care'], keywords: ['respiratory', 'pulmonary'] },
   { match: 'wheezing', categories: ['primary-care'], keywords: ['respiratory', 'pulmonary', 'asthma'] },
   { match: 'asthma', categories: ['primary-care'], keywords: ['respiratory', 'pulmonary', 'asthma'] },
   { match: 'cough', categories: ['primary-care'], keywords: ['respiratory', 'pulmonary'] },
   // Mental health
-  { match: 'anxiety', categories: ['mental-health', 'crisis-line'], keywords: ['anxiety', 'counseling', 'therapy'] },
-  { match: 'depression', categories: ['mental-health', 'crisis-line'], keywords: ['depression', 'counseling', 'therapy'] },
-  { match: 'panic attack', categories: ['mental-health', 'crisis-line'], keywords: ['panic', 'anxiety', 'counseling'] },
+  { match: 'anxiety', categories: ['mental-health'], keywords: ['anxiety', 'counseling', 'therapy'] },
+  { match: 'depression', categories: ['mental-health'], keywords: ['depression', 'counseling', 'therapy'] },
+  { match: 'panic attack', categories: ['mental-health'], keywords: ['panic', 'anxiety', 'counseling'] },
   { match: 'ptsd', categories: ['mental-health', 'veterans'], keywords: ['trauma', 'counseling', 'therapy'] },
   { match: 'trauma', categories: ['mental-health'], keywords: ['trauma', 'counseling', 'therapy'] },
   { match: 'stress', categories: ['mental-health'], keywords: ['stress', 'counseling'] },
@@ -403,7 +403,7 @@ const SYMPTOM_MAPPINGS: SymptomMapping[] = [
   { match: 'addiction', categories: ['substance-use', 'mental-health'], keywords: ['substance use', 'addiction', 'recovery'] },
   { match: 'alcoholism', categories: ['substance-use', 'mental-health'], keywords: ['substance use', 'alcohol', 'recovery'] },
   { match: 'drug problem', categories: ['substance-use', 'mental-health'], keywords: ['substance use', 'addiction'] },
-  { match: 'opioid', categories: ['substance-use', 'crisis-line'], keywords: ['substance use', 'opioid', 'naloxone'] },
+  { match: 'opioid', categories: ['substance-use'], keywords: ['substance use', 'opioid', 'naloxone'] },
   // Dental
   { match: 'tooth pain', categories: ['dental'], keywords: ['dental', 'tooth', 'dentist'] },
   { match: 'toothache', categories: ['dental'], keywords: ['dental', 'tooth', 'dentist'] },
@@ -450,6 +450,7 @@ export interface ExpandedQuery {
   matchedCategories: string[];
   matchedKeywords: string[];
   redFlag: boolean;
+  isCrisisQuery: boolean;
 }
 
 /**
@@ -534,6 +535,13 @@ export function expandQuery(rawText: string): ExpandedQuery {
     }
   }
 
+  // Determine if this is a genuine crisis query — only true crisis queries
+  // should surface crisis lines prominently. Searching "anxiety" or "depression"
+  // is NOT a crisis query even though those symptoms used to map to crisis-line.
+  const crisisTokens = new Set(['crisis', 'suicidal', 'suicide', 'overdose', 'self harm', 'selfharm', 'self-harm']);
+  const isCrisisQuery = redFlag && matchedCategories.includes('crisis-line') &&
+    [...crisisTokens].some((t) => normalized.includes(t));
+
   const significantTokens = [...expandedTokens].filter(isSignificant);
   const stemmedTokens = new Set<string>();
   for (const t of significantTokens) stemmedTokens.add(stem(t));
@@ -545,6 +553,7 @@ export function expandQuery(rawText: string): ExpandedQuery {
     matchedCategories: [...matchedCategories],
     matchedKeywords: [...matchedKeywords],
     redFlag,
+    isCrisisQuery,
   };
 }
 
@@ -734,6 +743,14 @@ function scoreResource(
   }
 
   if (!matchedAny) return 0;
+
+  // Deprioritize crisis lines for non-crisis queries. Crisis lines match on
+  // the word "crisis" in their name (Tier 1 = 100pts) even when the user
+  // searched for "anxiety" or "depression". Only surface them prominently
+  // when the query is a genuine crisis query.
+  if (catSlug === 'crisis-line' && !expanded.isCrisisQuery) {
+    score *= 0.15;
+  }
 
   return score;
 }
