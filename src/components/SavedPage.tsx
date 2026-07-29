@@ -4,7 +4,7 @@ import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
 import { useFavorites } from '../lib/favorites';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
 import { formatTodayHours, isOpenNow, formatCost } from '../lib/format';
-import { ResourceImage } from './ResourceImage';
+import { AvatarBadge } from './ResourceImage';
 
 interface SavedPageProps {
   resources: ResourceWithCategory[];
@@ -91,13 +91,8 @@ export function SavedPage({ resources, categories, onNavigate }: SavedPageProps)
                 onClick={() => onNavigate({ name: 'resource', resourceId: resource.id })}
                 className="w-full text-left rounded-2xl bg-white border border-ink-200 overflow-hidden hover:border-sage-300 hover:shadow-soft transition-all duration-200 ease-out-expo flex"
               >
-                <div className="relative w-24 sm:w-32 flex-shrink-0 bg-ink-100">
-                  <ResourceImage
-                    resource={resource}
-                    className="w-full h-full object-cover"
-                    maxWidth={256}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/10" />
+                <div className="relative w-24 sm:w-32 flex-shrink-0">
+                  <AvatarBadge slug={category?.slug ?? ''} className="w-full h-full" />
                 </div>
                 <div className="flex-1 p-3 sm:p-4 min-w-0">
                   <div className="flex items-start justify-between gap-2">

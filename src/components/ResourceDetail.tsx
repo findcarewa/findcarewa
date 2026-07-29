@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   X, MapPin, Phone, Globe, Clock, Star, Check, DollarSign, Navigation,
   Stethoscope, ShieldCheck, Accessibility, Heart,
-  Languages as LanguagesIcon, Sparkles, MessageSquare, Images,
+  Languages as LanguagesIcon, Sparkles, MessageSquare,
 } from './IconLib';
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
 import { useFavorites } from '../lib/favorites';
@@ -12,11 +12,7 @@ import {
   formatCost, formatHoursList, isOpenNow, formatPhone, formatLanguages,
   getDirectionsUrl, estimateCost,
 } from '../lib/format';
-import {
-  fetchPlaceResult,
-  isVirtualService, hasGoogleKey, PlaceResult,
-} from '../lib/resourceImages';
-import { PlacePhotoGallery, ResourceImage } from './ResourceImage';
+import { AvatarBadge } from './ResourceImage';
 import {
   setPageMeta, injectPageSchema,
   resourceDetailMeta, medicalClinicSchema, breadcrumbSchema,
@@ -37,7 +33,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
   const color = category ? getCategoryColor(category.color) : getCategoryColor('teal');
   const open  = isOpenNow(resource.hours);
   const hoursList = formatHoursList(resource.hours);
-  const virtual   = isVirtualService(resource);
+
 
   const { isFavorite, toggle } = useFavorites();
   const { user } = useAuth();
@@ -48,15 +44,8 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
   );
   const costEstimate = estimateCost(resource, coverage);
 
-  // ── Hero image state ──────────────────────────────────────────────────────
-  const [placeResult, setPlaceResult] = useState<PlaceResult | null>(null);
-  const [showGallery, setShowGallery] = useState(false);
-
+  // ── SEO: set page meta + MedicalClinic schema ──
   useEffect(() => {
-    setShowGallery(false);
-    setPlaceResult(null);
-
-    // ── SEO: set page meta + MedicalClinic schema ──
     const cat = categories.find((c) => c.id === resource.category_id);
     const meta = resourceDetailMeta(resource, cat);
     setPageMeta(meta);
@@ -66,12 +55,6 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
       { name: 'Search', path: '/#/search' },
       { name: resource.name, path: `/#/resource/${resource.id}` },
     ]));
-
-    if (hasGoogleKey() && !virtual) {
-      fetchPlaceResult(resource).then((result) => {
-        setPlaceResult(result);
-      });
-    }
   }, [resource.id]);
 
   useEffect(() => {
@@ -88,8 +71,6 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
     { value: 'private',   label: 'Private',      available: resource.private_insurance },
   ];
 
-  const photoCount  = placeResult?.photos.length ?? 0;
-
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-primary-950/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
@@ -98,16 +79,13 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
         className="relative w-full sm:max-w-2xl lg:max-w-3xl max-h-[92vh] sm:max-h-[88vh] bg-white rounded-t-3xl sm:rounded-3xl shadow-card overflow-hidden flex flex-col animate-scale-in"
         role="dialog" aria-modal="true" aria-label={resource.name}
       >
-        {/* ── Hero image ───────────────────────────────────────────────────── */}
-        <div className="relative flex-shrink-0 overflow-hidden h-48 sm:h-60 bg-ink-100">
-          <ResourceImage
-            resource={resource}
-            className="w-full h-full"
-            maxWidth={1200}
-            onPlaceResult={setPlaceResult}
-          />
-          {/* Dark overlay for tone consistency and text legibility */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent pointer-events-none" />
+        {/* ── Hero icon ────────────────────────────────────────────────────── */}
+        <div className="relative flex-shrink-0 overflow-hidden h-44 sm:h-52">
+          <div className={`absolute inset-0 bg-gradient-to-br ${color.pastelBg}`} />
+          <div className="absolute inset-0 bg-black/15" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Icon className="w-20 h-20 text-white/50" strokeWidth={1.5} />
+          </div>
 
           <button onClick={onClose}
             className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-primary-700 hover:bg-white shadow-soft z-10"
@@ -129,35 +107,17 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
             </div>
           )}
 
-          {resource.rating > 0 && !photoCount && (
+          {resource.rating > 0 && (
             <div className="absolute bottom-3 right-4 flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-md">
               <Star className="w-3.5 h-3.5 text-warning-500 fill-warning-500" />
               <span className="text-xs font-bold text-primary-800">{resource.rating.toFixed(1)}</span>
             </div>
-          )}
-
-          {photoCount > 1 && (
-            <button
-              onClick={() => setShowGallery((s) => !s)}
-              className="absolute bottom-3 right-4 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/90 backdrop-blur-md text-xs font-semibold text-primary-700 hover:bg-white transition-colors"
-            >
-              <Images className="w-3.5 h-3.5" />
-              {photoCount} photos
-            </button>
           )}
         </div>
 
         {/* ── Scrollable body ──────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-5 sm:p-6 space-y-6">
-
-            {showGallery && placeResult && (
-              <PlacePhotoGallery
-                placeId={resource.google_place_id ?? ''}
-                resource={resource}
-                name={resource.name}
-              />
-            )}
 
             <div>
               <div className="flex items-start justify-between gap-3">
