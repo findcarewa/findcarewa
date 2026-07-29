@@ -13,10 +13,10 @@ import {
   getDirectionsUrl, estimateCost,
 } from '../lib/format';
 import {
-  fetchPlaceResult, placePhotoUrl, clearbitLogoUrl,
+  fetchPlaceResult,
   isVirtualService, hasGoogleKey, PlaceResult,
 } from '../lib/resourceImages';
-import { PlacePhotoGallery } from './ResourceImage';
+import { PlacePhotoGallery, ResourceImage } from './ResourceImage';
 import {
   setPageMeta, injectPageSchema,
   resourceDetailMeta, medicalClinicSchema, breadcrumbSchema,
@@ -49,16 +49,11 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
   const costEstimate = estimateCost(resource, coverage);
 
   // ── Hero image state ──────────────────────────────────────────────────────
-  type HeroKind = 'avatar' | 'loading' | 'photo' | 'logo';
-  const [heroKind,  setHeroKind]  = useState<HeroKind>('loading');
-  const [heroSrc,   setHeroSrc]   = useState<string>('');
   const [placeResult, setPlaceResult] = useState<PlaceResult | null>(null);
   const [showGallery, setShowGallery] = useState(false);
-  const [heroErrored, setHeroErrored] = useState(false);
 
   useEffect(() => {
     setShowGallery(false);
-    setHeroErrored(false);
     setPlaceResult(null);
 
     // ── SEO: set page meta + MedicalClinic schema ──
@@ -72,43 +67,12 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
       { name: resource.name, path: `/#/resource/${resource.id}` },
     ]));
 
-    if (resource.photo_url) {
-      setHeroSrc(resource.photo_url); setHeroKind('photo'); return;
+    if (hasGoogleKey() && !virtual) {
+      fetchPlaceResult(resource).then((result) => {
+        setPlaceResult(result);
+      });
     }
-
-    if (virtual) {
-      if (resource.domain) { setHeroSrc(clearbitLogoUrl(resource.domain)); setHeroKind('logo'); }
-      else { setHeroKind('avatar'); }
-      return;
-    }
-
-    if (!hasGoogleKey()) {
-      if (resource.domain) { setHeroSrc(clearbitLogoUrl(resource.domain)); setHeroKind('logo'); }
-      else { setHeroKind('avatar'); }
-      return;
-    }
-
-    setHeroKind('loading');
-    fetchPlaceResult(resource).then((result) => {
-      setPlaceResult(result);
-      if (result.photos.length > 0) {
-        setHeroSrc(placePhotoUrl(result.photos[0], 1200));
-        setHeroKind('photo');
-      } else if (resource.domain) {
-        setHeroSrc(clearbitLogoUrl(resource.domain));
-        setHeroKind('logo');
-      } else {
-        setHeroKind('avatar');
-      }
-    });
   }, [resource.id]);
-
-  function handleHeroError() {
-    if (heroErrored) return;
-    setHeroErrored(true);
-    if (resource.domain) { setHeroSrc(clearbitLogoUrl(resource.domain)); setHeroKind('logo'); }
-    else { setHeroKind('avatar'); }
-  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -125,10 +89,6 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
   ];
 
   const photoCount  = placeResult?.photos.length ?? 0;
-  const isLoading   = heroKind === 'loading';
-  const isPhoto     = heroKind === 'photo';
-  const isLogo      = heroKind === 'logo';
-  const isAvatar    = heroKind === 'avatar';
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
@@ -139,32 +99,15 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
         role="dialog" aria-modal="true" aria-label={resource.name}
       >
         {/* ── Hero image ───────────────────────────────────────────────────── */}
-        <div className={`relative flex-shrink-0 overflow-hidden ${isLogo ? 'h-32 sm:h-40 bg-white' : 'h-48 sm:h-60 bg-ink-100'}`}>
-
-          {isLoading && (
-            <div className={`w-full h-full ${color.bg} flex items-center justify-center animate-pulse`}>
-              <Icon className="w-16 h-16 text-white opacity-30" />
-            </div>
-          )}
-
-          {isPhoto && (
-            <>
-              <img src={heroSrc} alt={resource.name} className="w-full h-full object-cover" onError={handleHeroError} />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
-            </>
-          )}
-
-          {isLogo && (
-            <div className="w-full h-full flex items-center justify-center bg-white px-8">
-              <img src={heroSrc} alt={`${resource.name} logo`} className="max-h-20 max-w-[60%] object-contain" onError={handleHeroError} />
-            </div>
-          )}
-
-          {isAvatar && (
-            <div className={`w-full h-full flex items-center justify-center ${color.bg}`}>
-              <Icon className="w-16 h-16 text-white opacity-30" />
-            </div>
-          )}
+        <div className="relative flex-shrink-0 overflow-hidden h-48 sm:h-60 bg-ink-100">
+          <ResourceImage
+            resource={resource}
+            className="w-full h-full"
+            maxWidth={1200}
+            onPlaceResult={setPlaceResult}
+          />
+          {/* Dark overlay for tone consistency and text legibility */}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/15 to-transparent pointer-events-none" />
 
           <button onClick={onClose}
             className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-primary-700 hover:bg-white shadow-soft z-10"
@@ -179,21 +122,21 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
             </span>
           </div>
 
-          {isPhoto && category && (
+          {category && (
             <div className={`absolute bottom-3 left-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wide ${color.bg} text-white`}>
               <Icon className="w-3.5 h-3.5" />
               {category.name}
             </div>
           )}
 
-          {isPhoto && resource.rating > 0 && !photoCount && (
+          {resource.rating > 0 && !photoCount && (
             <div className="absolute bottom-3 right-4 flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-md">
               <Star className="w-3.5 h-3.5 text-warning-500 fill-warning-500" />
               <span className="text-xs font-bold text-primary-800">{resource.rating.toFixed(1)}</span>
             </div>
           )}
 
-          {isPhoto && photoCount > 1 && (
+          {photoCount > 1 && (
             <button
               onClick={() => setShowGallery((s) => !s)}
               className="absolute bottom-3 right-4 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/90 backdrop-blur-md text-xs font-semibold text-primary-700 hover:bg-white transition-colors"
