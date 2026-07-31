@@ -324,6 +324,7 @@ export default function App() {
                   <ResourceDetail
                     resource={singleResource as ResourceWithCategory}
                     categories={categories}
+                    allResources={resources as ResourceWithCategory[]}
                     onClose={() => navigate({ name: 'search' })}
                     onNavigate={navigate}
                   />
