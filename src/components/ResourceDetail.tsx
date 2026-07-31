@@ -21,13 +21,14 @@ import {
 interface FacilityDetailProps {
   resource: ResourceWithCategory;
   categories: ResourceCategory[];
-  onClose: () => void;
+  onClose?: () => void;
   onNavigate: (route: any) => void;
+  allResources?: ResourceWithCategory[];
 }
 
 type Coverage = 'uninsured' | 'medicaid' | 'medicare' | 'private';
 
-export function ResourceDetail({ resource, categories, onClose, onNavigate }: FacilityDetailProps) {
+export function ResourceDetail({ resource, categories, onClose, onNavigate, allResources }: FacilityDetailProps) {
   const category = categories.find((c) => c.id === resource.category_id);
   const Icon  = category ? getCategoryIcon(category.icon) : Stethoscope;
   const color = category ? getCategoryColor(category.color) : getCategoryColor('teal');
@@ -58,10 +59,10 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
   }, [resource.id]);
 
   useEffect(() => {
+    if (!onClose) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
+    return () => { window.removeEventListener('keydown', onKey); };
   }, [onClose]);
 
   const coverageOptions: { value: Coverage; label: string; available: boolean }[] = [
@@ -71,13 +72,15 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
     { value: 'private',   label: 'Private',      available: resource.private_insurance },
   ];
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-primary-950/60 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+  const related = (allResources ?? [])
+    .filter((r) => r.id !== resource.id && r.category_id === resource.category_id)
+    .slice(0, 3);
 
+  return (
+    <div className="w-full">
       <div
-        className="relative w-full sm:max-w-2xl lg:max-w-3xl max-h-[92vh] sm:max-h-[88vh] bg-white rounded-t-3xl sm:rounded-3xl shadow-card overflow-hidden flex flex-col animate-scale-in"
-        role="dialog" aria-modal="true" aria-label={resource.name}
+        className="w-full max-w-3xl mx-auto bg-white rounded-3xl shadow-card overflow-hidden flex flex-col animate-scale-in"
+        role="article" aria-label={resource.name}
       >
         {/* ── Hero icon ────────────────────────────────────────────────────── */}
         <div className="relative flex-shrink-0 overflow-hidden h-44 sm:h-52">
@@ -87,11 +90,13 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
             <Icon className="w-20 h-20 text-white/50" strokeWidth={1.5} />
           </div>
 
-          <button onClick={onClose}
-            className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-primary-700 hover:bg-white shadow-soft z-10"
-            aria-label="Close">
-            <X className="w-5 h-5" />
-          </button>
+          {onClose && (
+            <button onClick={onClose}
+              className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/90 backdrop-blur-md flex items-center justify-center text-primary-700 hover:bg-white shadow-soft z-10"
+              aria-label="Back">
+              <X className="w-5 h-5" />
+            </button>
+          )}
 
           <div className="absolute top-3 left-3 z-10">
             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide backdrop-blur-md ${open ? 'bg-success-600/90 text-white' : 'bg-primary-800/80 text-white'}`}>
@@ -153,7 +158,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
             </div>
 
             <button
-              onClick={() => { onClose(); onNavigate({ name: 'feedback', resourceId: resource.id }); }}
+              onClick={() => { onClose?.(); onNavigate({ name: 'feedback', resourceId: resource.id }); }}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cream-50 border border-ink-200 text-sm font-medium text-primary-700 hover:bg-cream-100 transition-all"
             >
               <MessageSquare className="w-4 h-4" />
@@ -315,6 +320,24 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate }: Fa
           </div>
         </div>
       </div>
+
+      {related.length > 0 && (
+        <div className="mt-6">
+          <h3 className="font-display font-bold text-base text-primary-800 mb-3">Related resources</h3>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {related.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => onNavigate({ name: 'resource', id: r.id })}
+                className="text-left rounded-xl bg-white border border-ink-200 p-3 hover:border-sage-300 hover:shadow-soft transition-all"
+              >
+                <h4 className="font-bold text-sm text-primary-800 leading-tight line-clamp-2">{r.name}</h4>
+                <p className="mt-1 text-xs text-primary-500 line-clamp-1">{r.city}, {r.county} County</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

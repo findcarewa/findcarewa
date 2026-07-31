@@ -12,7 +12,6 @@ import { useAuth } from '../lib/auth';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
 import { formatCost, isOpenNow, formatTodayHours, roundDownFriendly } from '../lib/format';
 import { hasRating } from '../lib/resourceImages';
-import { ResourceDetail } from './ResourceDetail';
 import { highlightSegments } from '../lib/highlight';
 
 interface SearchPageProps {
@@ -35,7 +34,7 @@ export function SearchPage({
   const [city, setCity] = useState(initialCity || '');
   const [view, setView] = useState<'list' | 'map'>('list');
   const [showFilters, setShowFilters] = useState(false);
-  const [selectedResource, setSelectedResource] = useState<ResourceWithCategory | null>(null);
+
   const [symptoms, setSymptoms] = useState<Symptom[]>([]);
 
   // Load symptoms DB for search index
@@ -379,7 +378,7 @@ export function SearchPage({
                       key={resource.id}
                       resource={resource}
                       category={categories.find((c) => c.id === resource.category_id)}
-                      onClick={() => setSelectedResource(resource)}
+                      onClick={() => onNavigate({ name: 'resource', id: resource.id })}
                       animationDelay={Math.min(idx * 30, 300)}
                       searchQuery={deferredSearch}
                     />
@@ -397,7 +396,7 @@ export function SearchPage({
                 key={resource.id}
                 resource={resource}
                 category={categories.find((c) => c.id === resource.category_id)}
-                onClick={() => setSelectedResource(resource)}
+                onClick={() => onNavigate({ name: 'resource', id: resource.id })}
                 animationDelay={Math.min(idx * 30, 300)}
                 searchQuery={deferredSearch}
               />
@@ -412,14 +411,6 @@ export function SearchPage({
         )}
       </div>
 
-      {selectedResource && (
-        <ResourceDetail
-          resource={selectedResource}
-          categories={categories}
-          onClose={() => setSelectedResource(null)}
-          onNavigate={onNavigate}
-        />
-      )}
     </section>
   );
 }
@@ -552,7 +543,7 @@ function ResourceCard({
     <button
       onClick={onClick}
       style={{ animationDelay: `${animationDelay}ms` }}
-      className="card-editororial group text-left rounded-2xl bg-white border border-ink-200 overflow-hidden shadow-soft hover:shadow-card hover:-translate-y-0.5 hover:border-sage-200 transition-all duration-200 ease-out-expo animate-fade-up flex flex-col"
+      className="card-editorial group text-left rounded-2xl bg-white border border-ink-200 overflow-hidden shadow-soft hover:shadow-card hover:-translate-y-0.5 hover:border-sage-200 transition-all duration-200 ease-out-expo animate-fade-up flex flex-col"
     >
       <div className={`relative h-28 overflow-hidden bg-gradient-to-br ${color.pastelBg}`}>
         <div className="absolute inset-0 flex items-center justify-center">
