@@ -378,7 +378,7 @@ export function SearchPage({
                       key={resource.id}
                       resource={resource}
                       category={categories.find((c) => c.id === resource.category_id)}
-                      onClick={() => onNavigate({ name: 'resource', id: resource.id })}
+                      onClick={() => onNavigate({ name: 'resource', id: resource.slug || resource.id })}
                       animationDelay={Math.min(idx * 30, 300)}
                       searchQuery={deferredSearch}
                     />
@@ -396,7 +396,7 @@ export function SearchPage({
                 key={resource.id}
                 resource={resource}
                 category={categories.find((c) => c.id === resource.category_id)}
-                onClick={() => onNavigate({ name: 'resource', id: resource.id })}
+                onClick={() => onNavigate({ name: 'resource', id: resource.slug || resource.id })}
                 animationDelay={Math.min(idx * 30, 300)}
                 searchQuery={deferredSearch}
               />
@@ -477,7 +477,7 @@ function MapView({ resources }: {
           <div style="min-width:180px">
             <strong style="font-size:13px">${r.name}</strong><br/>
             <span style="font-size:11px;color:#64748b">${cat?.name || 'Resource'} \u00b7 ${r.city}</span><br/>
-            <a href="#/resource/${r.id}" style="font-size:12px;color:#0d9488">View details \u2192</a>
+            <a href="#/resource/${r.slug || r.id}" style="font-size:12px;color:#0d9488">View details \u2192</a>
           </div>
         `);
         bounds.push([r.lat!, r.lng!]);
