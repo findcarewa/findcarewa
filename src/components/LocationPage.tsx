@@ -112,7 +112,6 @@ export function LocationPage({ location, specialty, resources, categories, onNav
   // Nearby cities/counties for internal linking
   const nearbyLocations = useMemo(() => {
     if (isCounty) {
-      // List cities within this county
       const cities = new Map<string, number>();
       locationResources.forEach((r) => {
         cities.set(r.city, (cities.get(r.city) ?? 0) + 1);
@@ -122,7 +121,6 @@ export function LocationPage({ location, specialty, resources, categories, onNav
         .slice(0, 12)
         .map(([city, count]) => ({ name: city, count, type: 'city' as const }));
     }
-    // For cities — list nearby counties
     const cityResource = locationResources[0];
     if (!cityResource) return [];
     const county = cityResource.county;
@@ -299,7 +297,7 @@ export function LocationPage({ location, specialty, resources, categories, onNav
                   key={r.id}
                   resource={r}
                   category={categories.find((c) => c.id === r.category_id)}
-                  onClick={() => onNavigate({ name: 'resource', id: r.id })}
+                  onClick={() => onNavigate({ name: 'resource', id: r.slug || r.id })}
                 />
               ))}
             </div>
