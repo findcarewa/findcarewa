@@ -183,7 +183,7 @@ export function medicalClinicSchema(
     '@context': 'https://schema.org',
     '@type': 'MedicalClinic',
     name: resource.name,
-    url: SITE_URL + `/#/resource/${resource.id}`,
+    url: SITE_URL + `/#/resource/${resource.slug || resource.id}`,
     description: resource.description,
     ...(resource.phone && { telephone: resource.phone }),
     ...(resource.website && { sameAs: [resource.website] }),
@@ -346,7 +346,7 @@ export function resourceDetailMeta(resource: ResourceWithCategory, category?: Re
   return {
     title: `${resource.name} - ${catName} in ${locationPart} | FindCare WA`,
     description: resource.description.slice(0, 155),
-    canonicalPath: `/#/resource/${resource.id}`,
+    canonicalPath: `/#/resource/${resource.slug || resource.id}`,
     ogType: 'article',
   };
 }
@@ -470,7 +470,7 @@ export function locationItemListSchema(
       item: {
         '@type': 'MedicalClinic',
         name: r.name,
-        url: SITE_URL + `/#/resource/${r.id}`,
+        url: SITE_URL + `/#/resource/${r.slug || r.id}`,
         ...(r.address && {
           address: {
             '@type': 'PostalAddress',
@@ -562,7 +562,7 @@ export function generateSitemapXml(
 
   for (const r of resources) {
     urls.push(`  <url>
-    <loc>${SITE_URL}/#/resource/${r.id}</loc>
+    <loc>${SITE_URL}/#/resource/${r.slug || r.id}</loc>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>`);
