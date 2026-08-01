@@ -46,7 +46,7 @@ Deno.serve(async (req: Request) => {
     ];
 
     const [resources, symptoms, categories] = await Promise.all([
-      fetchTable("resources", "id,city,county"),
+      fetchTable("resources", "id,slug,city,county"),
       fetchTable("symptoms", "slug,updated_at"),
       fetchTable("resource_categories", "slug"),
     ]);
@@ -91,7 +91,7 @@ Deno.serve(async (req: Request) => {
 
     for (const r of resources) {
       urls.push(`  <url>
-    <loc>${SITE_URL}/#/resource/${r.id}</loc>
+    <loc>${SITE_URL}/#/resource/${r.slug || r.id}</loc>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
   </url>`);

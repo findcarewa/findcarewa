@@ -4,7 +4,7 @@ export type Route =
   | { name: 'home' }
   | { name: 'search'; query?: string; categorySlug?: string; city?: string }
   | { name: 'map' }
-  | { name: 'resource'; id: string }
+  | { name: 'resource'; id: string; slug?: string }
   | { name: 'request' }
   | { name: 'feedback'; resourceId?: string }
   | { name: 'about' }
@@ -35,7 +35,7 @@ function parseHash(): Route {
   }
 
   if (segments[0] === 'resource' && segments[1]) {
-    return { name: 'resource', id: segments[1] };
+    return { name: 'resource', id: segments[1], slug: segments[1] };
   }
 
   if (segments[0] === 'locations') {
@@ -71,7 +71,7 @@ export function routeToHash(route: Route): string {
       const qs = params.toString();
       return `#/search${qs ? '?' + qs : ''}`;
     }
-    case 'resource': return `#/resource/${route.id}`;
+    case 'resource': return `#/resource/${route.slug || route.id}`;
     case 'locations': return '#/locations';
     case 'location': {
       if (route.specialty) return `#/locations/${route.location}/${route.specialty}`;
