@@ -81,19 +81,26 @@ export default function App() {
   // Handle resource detail route  -  load single resource
   useEffect(() => {
     if (route.name === 'resource') {
-      // Try to find in loaded resources first
-      const found = resources.find((r) => r.id === route.id);
+      // Try to find in loaded resources by slug or id
+      const found = resources.find((r) => r.slug === route.id || r.id === route.id);
       if (found) {
         setSingleResource(found);
       } else {
         // Fetch from Supabase
         setSingleResource(null);
         (async () => {
-          const { data, error: fetchError } = await supabase
+          // Try slug first, then fall back to id (UUID)
+          let query = supabase
             .from('resources')
-            .select('*, resource_categories!resources_category_id_fkey(id, name, slug, icon, color)')
-            .eq('id', route.id)
-            .maybeSingle();
+            .select('*, resource_categories!resources_category_id_fkey(id, name, slug, icon, color)');
+          // UUIDs contain hyphens in specific positions; slugs are kebab-case words
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(route.id);
+          if (isUuid) {
+            query = query.eq('id', route.id);
+          } else {
+            query = query.eq('slug', route.id);
+          }
+          const { data, error: fetchError } = await query.maybeSingle();
           if (!fetchError && data) {
             setSingleResource(data as Resource);
           }
