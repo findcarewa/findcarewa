@@ -88,7 +88,7 @@ export function SavedPage({ resources, categories, onNavigate }: SavedPageProps)
             return (
               <button
                 key={resource.id}
-                onClick={() => onNavigate({ name: 'resource', id: resource.id })}
+                onClick={() => onNavigate({ name: 'resource', id: resource.slug || resource.id })}
                 className="w-full text-left rounded-2xl bg-white border border-ink-200 overflow-hidden hover:border-sage-300 hover:shadow-soft transition-all duration-200 ease-out-expo flex"
               >
                 <div className="relative w-24 sm:w-32 flex-shrink-0">

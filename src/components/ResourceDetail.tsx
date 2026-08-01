@@ -54,7 +54,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate, allR
     injectPageSchema('breadcrumb', breadcrumbSchema([
       { name: 'Home', path: '/' },
       { name: 'Search', path: '/#/search' },
-      { name: resource.name, path: `/#/resource/${resource.id}` },
+      { name: resource.name, path: `/#/resource/${resource.slug || resource.id}` },
     ]));
   }, [resource.id]);
 
@@ -328,7 +328,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate, allR
             {related.map((r) => (
               <button
                 key={r.id}
-                onClick={() => onNavigate({ name: 'resource', id: r.id })}
+                onClick={() => onNavigate({ name: 'resource', id: r.slug || r.id })}
                 className="text-left rounded-xl bg-white border border-ink-200 p-3 hover:border-sage-300 hover:shadow-soft transition-all"
               >
                 <h4 className="font-bold text-sm text-primary-800 leading-tight line-clamp-2">{r.name}</h4>
