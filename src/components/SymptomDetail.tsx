@@ -353,7 +353,7 @@ export function SymptomDetail({ slug, resources, categories, onNavigate }: Sympt
                   key={r.id}
                   resource={r}
                   category={categories.find((c) => c.id === r.category_id)}
-                  onClick={() => onNavigate({ name: 'resource', id: r.id })}
+                  onClick={() => onNavigate({ name: 'resource', id: r.slug || r.id })}
                 />
               ))}
             </div>
