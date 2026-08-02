@@ -164,13 +164,13 @@ export function LocationPage({ location, specialty, resources, categories, onNav
 
     const crumbs = [
       { name: 'Home', path: '/' },
-      { name: 'Locations', path: '/#/locations' },
+      { name: 'Locations', path: '/locations' },
     ];
     if (specialty && specialtyCategory) {
-      crumbs.push({ name: isCounty ? `${locationName} County` : locationName, path: `/#/locations/${toLocationSlug(locationName)}` });
-      crumbs.push({ name: specialtyCategory.name, path: `/#/locations/${toLocationSlug(locationName)}/${specialty}` });
+      crumbs.push({ name: isCounty ? `${locationName} County` : locationName, path: `/locations/${toLocationSlug(locationName)}` });
+      crumbs.push({ name: specialtyCategory.name, path: `/locations/${toLocationSlug(locationName)}/${specialty}` });
     } else {
-      crumbs.push({ name: isCounty ? `${locationName} County` : locationName, path: `/#/locations/${toLocationSlug(locationName)}` });
+      crumbs.push({ name: isCounty ? `${locationName} County` : locationName, path: `/locations/${toLocationSlug(locationName)}` });
     }
     injectPageSchema('breadcrumb', breadcrumbSchema(crumbs));
 
