@@ -125,7 +125,7 @@ export function websiteSchema() {
       '@type': 'SearchAction',
       target: {
         '@type': 'EntryPoint',
-        urlTemplate: `${SITE_URL}/#/search?q={search_term_string}`,
+        urlTemplate: `${SITE_URL}/search?q={search_term_string}`,
       },
       'query-input': 'required name=search_term_string',
     },
@@ -183,7 +183,7 @@ export function medicalClinicSchema(
     '@context': 'https://schema.org',
     '@type': 'MedicalClinic',
     name: resource.name,
-    url: SITE_URL + `/#/resource/${resource.slug || resource.id}`,
+    url: SITE_URL + `/resource/${resource.slug || resource.id}`,
     description: resource.description,
     ...(resource.phone && { telephone: resource.phone }),
     ...(resource.website && { sameAs: [resource.website] }),
@@ -298,7 +298,7 @@ export function symptomListMeta(): PageMeta {
     title: 'Symptoms & Conditions Guide | FindCare WA',
     description:
       'Browse common healthcare symptoms and conditions. Understand urgency levels, find recommended care types, and connect with healthcare resources across Washington State.',
-    canonicalPath: '/#/symptoms',
+    canonicalPath: '/symptoms',
   };
 }
 
@@ -307,7 +307,7 @@ export function symptomDetailMeta(symptom: SymptomWithDetails): PageMeta {
   return {
     title: `${symptom.name} - Symptoms & Care Guide | FindCare WA`,
     description: desc,
-    canonicalPath: `/#/symptom/${symptom.slug}`,
+    canonicalPath: `/symptom/${symptom.slug}`,
     ogType: 'article',
   };
 }
@@ -316,24 +316,24 @@ export function searchMeta(query?: string, categorySlug?: string, city?: string)
   let title = 'Find Healthcare Resources | FindCare WA';
   let desc =
     'Search 1,200+ free and low-cost healthcare resources across Washington State by symptom, insurance, location, language, and cost.';
-  let path = '/#/search';
+  let path = '/search';
 
   if (categorySlug && city) {
     title = `${capitalize(categorySlug.replace(/-/g, ' '))} in ${capitalize(city)} | FindCare WA`;
     desc = `Find ${categorySlug.replace(/-/g, ' ')} resources in ${capitalize(city)}, Washington State. Filter by insurance, cost, language, and more.`;
-    path = `/#/search?cat=${categorySlug}&city=${city}`;
+    path = `/search?cat=${categorySlug}&city=${city}`;
   } else if (categorySlug) {
     title = `${capitalize(categorySlug.replace(/-/g, ' '))} Resources | FindCare WA`;
     desc = `Find ${categorySlug.replace(/-/g, ' ')} resources across Washington State. Filter by insurance, cost, language, and location.`;
-    path = `/#/search?cat=${categorySlug}`;
+    path = `/search?cat=${categorySlug}`;
   } else if (city) {
     title = `Healthcare Resources in ${capitalize(city)} | FindCare WA`;
     desc = `Find free and low-cost healthcare resources in ${capitalize(city)}, Washington State.`;
-    path = `/#/search?city=${city}`;
+    path = `/search?city=${city}`;
   } else if (query) {
     title = `Search: ${query} | FindCare WA`;
     desc = `Search results for "${query}" in healthcare resources across Washington State.`;
-    path = `/#/search?q=${encodeURIComponent(query)}`;
+    path = `/search?q=${encodeURIComponent(query)}`;
   }
 
   return { title, description: desc, canonicalPath: path };
@@ -346,7 +346,7 @@ export function resourceDetailMeta(resource: ResourceWithCategory, category?: Re
   return {
     title: `${resource.name} - ${catName} in ${locationPart} | FindCare WA`,
     description: resource.description.slice(0, 155),
-    canonicalPath: `/#/resource/${resource.slug || resource.id}`,
+    canonicalPath: `/resource/${resource.slug || resource.id}`,
     ogType: 'article',
   };
 }
@@ -356,7 +356,7 @@ export function mapMeta(): PageMeta {
     title: 'Healthcare Resource Map | FindCare WA',
     description:
       'Find healthcare resources, clinics, food banks, and community services on an interactive map of Washington State.',
-    canonicalPath: '/#/map',
+    canonicalPath: '/map',
   };
 }
 
@@ -365,7 +365,7 @@ export function aboutMeta(): PageMeta {
     title: 'About FindCare | Washington State Healthcare Navigation',
     description:
       'FindCare is a free platform helping Washington State residents find affordable, accessible healthcare and community resources.',
-    canonicalPath: '/#/about',
+    canonicalPath: '/about',
   };
 }
 
@@ -374,7 +374,7 @@ export function howItWorksMeta(): PageMeta {
     title: 'How FindCare Works | Healthcare Search Guide',
     description:
       'Learn how FindCare helps you search for healthcare resources in plain language and filter by insurance, language, cost, and location.',
-    canonicalPath: '/#/how-it-works',
+    canonicalPath: '/how-it-works',
   };
 }
 
@@ -383,7 +383,7 @@ export function faqMeta(): PageMeta {
     title: 'Frequently Asked Questions | FindCare WA',
     description:
       'Answers to common questions about FindCare, insurance, crisis support, and finding healthcare resources in Washington State.',
-    canonicalPath: '/#/faq',
+    canonicalPath: '/faq',
   };
 }
 
@@ -391,7 +391,7 @@ export function savedMeta(): PageMeta {
   return {
     title: 'Saved Resources | FindCare WA',
     description: 'View your saved healthcare resources on FindCare.',
-    canonicalPath: '/#/saved',
+    canonicalPath: '/saved',
     noIndex: true,
   };
 }
@@ -401,7 +401,7 @@ export function requestMeta(): PageMeta {
     title: 'Request a Resource | FindCare WA',
     description:
       'Suggest a healthcare resource or community service to add to the FindCare Washington State directory.',
-    canonicalPath: '/#/request',
+    canonicalPath: '/request',
     noIndex: true,
   };
 }
@@ -410,7 +410,7 @@ export function feedbackMeta(): PageMeta {
   return {
     title: 'Feedback | FindCare WA',
     description: 'Share feedback or report an issue with a healthcare resource on FindCare.',
-    canonicalPath: '/#/feedback',
+    canonicalPath: '/feedback',
     noIndex: true,
   };
 }
@@ -422,7 +422,7 @@ export function locationIndexMeta(): PageMeta {
     title: 'Browse Healthcare Resources by Location | FindCare WA',
     description:
       'Browse healthcare resources by city and county across Washington State. Find clinics, food banks, mental health services, dental care, and community resources near you.',
-    canonicalPath: '/#/locations',
+    canonicalPath: '/locations',
   };
 }
 
@@ -438,14 +438,14 @@ export function locationMeta(
     return {
       title: `${specialtyName} in ${locLabel} | FindCare WA`,
       description: `Find ${specialtyName.toLowerCase()} resources in ${locLabel}, Washington State. ${resourceCount} verified healthcare providers and community services available.`,
-      canonicalPath: `/#/locations/${slugify(locationName)}/${specialty}`,
+      canonicalPath: `/locations/${slugify(locationName)}/${specialty}`,
       ogType: 'website',
     };
   }
   return {
     title: `Healthcare Resources in ${locLabel} | FindCare WA`,
     description: `Find free and low-cost healthcare resources in ${locLabel}, Washington State. ${resourceCount} verified clinics, food banks, mental health, dental, and community services.`,
-    canonicalPath: `/#/locations/${slugify(locationName)}`,
+    canonicalPath: `/locations/${slugify(locationName)}`,
     ogType: 'website',
   };
 }
@@ -470,7 +470,7 @@ export function locationItemListSchema(
       item: {
         '@type': 'MedicalClinic',
         name: r.name,
-        url: SITE_URL + `/#/resource/${r.slug || r.id}`,
+        url: SITE_URL + `/resource/${r.slug || r.id}`,
         ...(r.address && {
           address: {
             '@type': 'PostalAddress',
@@ -523,55 +523,34 @@ export function generateSitemapXml(
   const now = new Date().toISOString();
   const staticPages = [
     { path: '/', priority: '1.0', changefreq: 'weekly' },
-    { path: '/#/search', priority: '0.9', changefreq: 'weekly' },
-    { path: '/#/symptoms', priority: '0.8', changefreq: 'weekly' },
-    { path: '/#/map', priority: '0.7', changefreq: 'weekly' },
-    { path: '/#/about', priority: '0.5', changefreq: 'monthly' },
-    { path: '/#/how-it-works', priority: '0.5', changefreq: 'monthly' },
-    { path: '/#/faq', priority: '0.5', changefreq: 'monthly' },
+    { path: '/search', priority: '0.9', changefreq: 'weekly' },
+    { path: '/symptoms', priority: '0.8', changefreq: 'weekly' },
+    { path: '/locations', priority: '0.8', changefreq: 'weekly' },
+    { path: '/map', priority: '0.7', changefreq: 'weekly' },
+    { path: '/about', priority: '0.5', changefreq: 'monthly' },
+    { path: '/how-it-works', priority: '0.5', changefreq: 'monthly' },
+    { path: '/faq', priority: '0.5', changefreq: 'monthly' },
   ];
 
   const urls: string[] = [];
 
   for (const p of staticPages) {
-    urls.push(`  <url>
-    <loc>${SITE_URL}${p.path}</loc>
-    <lastmod>${now}</lastmod>
-    <changefreq>${p.changefreq}</changefreq>
-    <priority>${p.priority}</priority>
-  </url>`);
+    urls.push(`  <url>\n    <loc>${SITE_URL}${p.path}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`);
   }
 
   for (const cat of categories) {
-    urls.push(`  <url>
-    <loc>${SITE_URL}/#/search?cat=${cat.slug}</loc>
-    <lastmod>${now}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>`);
+    urls.push(`  <url>\n    <loc>${SITE_URL}/search?cat=${cat.slug}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`);
   }
 
   for (const s of symptoms) {
-    urls.push(`  <url>
-    <loc>${SITE_URL}/#/symptom/${s.slug}</loc>
-    <lastmod>${s.updated_at}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>`);
+    urls.push(`  <url>\n    <loc>${SITE_URL}/symptom/${s.slug}</loc>\n    <lastmod>${s.updated_at}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>`);
   }
 
   for (const r of resources) {
-    urls.push(`  <url>
-    <loc>${SITE_URL}/#/resource/${r.slug || r.id}</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>`);
+    urls.push(`  <url>\n    <loc>${SITE_URL}/resource/${r.slug || r.id}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>`);
   }
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.join('\n')}
-</urlset>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>`;
 }
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
