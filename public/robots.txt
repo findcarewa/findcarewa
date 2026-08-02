@@ -4,4 +4,4 @@ Disallow: /saved
 Disallow: /request
 Disallow: /feedback
 
-Sitemap: https://findcarewa.org/sitemap
+Sitemap: https://findcarewa.org/sitemap.xml
