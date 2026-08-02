@@ -53,8 +53,8 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate, allR
     injectPageSchema('medicalClinic', medicalClinicSchema(resource, cat));
     injectPageSchema('breadcrumb', breadcrumbSchema([
       { name: 'Home', path: '/' },
-      { name: 'Search', path: '/#/search' },
-      { name: resource.name, path: `/#/resource/${resource.slug || resource.id}` },
+      { name: 'Search', path: '/search' },
+      { name: resource.name, path: `/resource/${resource.slug || resource.id}` },
     ]));
   }, [resource.id]);
 
