@@ -74,8 +74,8 @@ export function SymptomDetail({ slug, resources, categories, onNavigate }: Sympt
             injectPageSchema('medicalWebPage', medicalWebPageSchema(data, meta.canonicalPath));
             injectPageSchema('breadcrumb', breadcrumbSchema([
               { name: 'Home', path: '/' },
-              { name: 'Symptoms', path: '/#/symptoms' },
-              { name: data.name, path: `/#/symptom/${data.slug}` },
+              { name: 'Symptoms', path: '/symptoms' },
+              { name: data.name, path: `/symptom/${data.slug}` },
             ]));
             if (data.faqs.length > 0) {
               injectPageSchema('faq', faqSchema(
