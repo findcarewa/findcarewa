@@ -11,17 +11,16 @@ const corsHeaders = {
   "Content-Type": "application/xml",
 };
 
-async function fetchTable(table: string, select: string) {
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/${table}?select=${select}&order=updated_at.desc`,
-    {
-      headers: {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Accept: "application/json",
-      },
+async function fetchTable(table: string, select: string, orderBy?: string) {
+  let url = `${SUPABASE_URL}/rest/v1/${table}?select=${select}`;
+  if (orderBy) url += `&order=${orderBy}.desc`;
+  const res = await fetch(url, {
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Accept: "application/json",
     },
-  );
+  });
   if (!res.ok) throw new Error(`Failed to fetch ${table}: ${res.status}`);
   return res.json();
 }
@@ -43,7 +42,6 @@ Deno.serve(async (req: Request) => {
   try {
     const now = new Date().toISOString();
 
-    // Path-based URLs (no hash fragments) so Google can crawl every page
     const staticPages = [
       { path: "/", priority: "1.0", changefreq: "weekly" },
       { path: "/search", priority: "0.9", changefreq: "weekly" },
@@ -56,8 +54,8 @@ Deno.serve(async (req: Request) => {
     ];
 
     const [resources, symptoms, categories] = await Promise.all([
-      fetchTable("resources", "id,slug,city,county"),
-      fetchTable("symptoms", "slug,updated_at"),
+      fetchTable("resources", "id,slug,city,county", "updated_at"),
+      fetchTable("symptoms", "slug,updated_at", "updated_at"),
       fetchTable("resource_categories", "slug"),
     ]);
 
