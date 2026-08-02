@@ -26,6 +26,15 @@ async function fetchTable(table: string, select: string) {
   return res.json();
 }
 
+function xmlEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -34,15 +43,16 @@ Deno.serve(async (req: Request) => {
   try {
     const now = new Date().toISOString();
 
+    // Path-based URLs (no hash fragments) so Google can crawl every page
     const staticPages = [
       { path: "/", priority: "1.0", changefreq: "weekly" },
-      { path: "/#/search", priority: "0.9", changefreq: "weekly" },
-      { path: "/#/symptoms", priority: "0.8", changefreq: "weekly" },
-      { path: "/#/map", priority: "0.7", changefreq: "weekly" },
-      { path: "/#/about", priority: "0.5", changefreq: "monthly" },
-      { path: "/#/how-it-works", priority: "0.5", changefreq: "monthly" },
-      { path: "/#/faq", priority: "0.5", changefreq: "monthly" },
-      { path: "/#/locations", priority: "0.8", changefreq: "weekly" },
+      { path: "/search", priority: "0.9", changefreq: "weekly" },
+      { path: "/symptoms", priority: "0.8", changefreq: "weekly" },
+      { path: "/locations", priority: "0.8", changefreq: "weekly" },
+      { path: "/map", priority: "0.7", changefreq: "weekly" },
+      { path: "/about", priority: "0.5", changefreq: "monthly" },
+      { path: "/how-it-works", priority: "0.5", changefreq: "monthly" },
+      { path: "/faq", priority: "0.5", changefreq: "monthly" },
     ];
 
     const [resources, symptoms, categories] = await Promise.all([
@@ -51,7 +61,6 @@ Deno.serve(async (req: Request) => {
       fetchTable("resource_categories", "slug"),
     ]);
 
-    // Build location URLs from cities and counties
     const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     const citySet = new Set<string>();
     const countySet = new Set<string>();
@@ -63,70 +72,35 @@ Deno.serve(async (req: Request) => {
     const urls: string[] = [];
 
     for (const p of staticPages) {
-      urls.push(`  <url>
-    <loc>${SITE_URL}${p.path}</loc>
-    <lastmod>${now}</lastmod>
-    <changefreq>${p.changefreq}</changefreq>
-    <priority>${p.priority}</priority>
-  </url>`);
+      urls.push(`  <url>\n    <loc>${SITE_URL}${p.path}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>`);
     }
 
     for (const cat of categories) {
-      urls.push(`  <url>
-    <loc>${SITE_URL}/#/search?cat=${cat.slug}</loc>
-    <lastmod>${now}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>`);
+      urls.push(`  <url>\n    <loc>${SITE_URL}/search?cat=${cat.slug}</loc>\n    <lastmod>${now}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`);
     }
 
     for (const s of symptoms) {
-      urls.push(`  <url>
-    <loc>${SITE_URL}/#/symptom/${s.slug}</loc>
-    <lastmod>${s.updated_at}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>`);
+      urls.push(`  <url>\n    <loc>${SITE_URL}/symptom/${s.slug}</loc>\n    <lastmod>${s.updated_at}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>`);
     }
 
     for (const r of resources) {
-      urls.push(`  <url>
-    <loc>${SITE_URL}/#/resource/${r.slug || r.id}</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>`);
+      const slug = xmlEscape(r.slug || r.id);
+      urls.push(`  <url>\n    <loc>${SITE_URL}/resource/${slug}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>`);
     }
 
-    // Location pages — city + county
     for (const city of citySet) {
-      urls.push(`  <url>
-    <loc>${SITE_URL}/#/locations/${slugify(city)}</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>`);
+      urls.push(`  <url>\n    <loc>${SITE_URL}/locations/${slugify(city)}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`);
     }
     for (const county of countySet) {
-      urls.push(`  <url>
-    <loc>${SITE_URL}/#/locations/${slugify(county)}</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
-  </url>`);
+      urls.push(`  <url>\n    <loc>${SITE_URL}/locations/${slugify(county)}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`);
     }
-    // Location + specialty pages
     for (const county of countySet) {
       for (const cat of categories) {
-        urls.push(`  <url>
-    <loc>${SITE_URL}/#/locations/${slugify(county)}/${cat.slug}</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-  </url>`);
+        urls.push(`  <url>\n    <loc>${SITE_URL}/locations/${slugify(county)}/${cat.slug}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>0.6</priority>\n  </url>`);
       }
     }
 
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.join("\n")}
-</urlset>`;
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>`;
 
     return new Response(xml, { status: 200, headers: corsHeaders });
   } catch (err) {
