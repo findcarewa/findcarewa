@@ -141,8 +141,8 @@ export default function App() {
           if (cat) {
             injectPageSchema('breadcrumb', breadcrumbSchema([
               { name: 'Home', path: '/' },
-              { name: 'Search', path: '/#/search' },
-              { name: cat.name, path: `/#/search?cat=${cat.slug}` },
+              { name: 'Search', path: '/search' },
+              { name: cat.name, path: `/search?cat=${cat.slug}` },
             ]));
           }
         } else {
@@ -163,7 +163,7 @@ export default function App() {
         injectPageSchema('faq', null);
         injectPageSchema('breadcrumb', breadcrumbSchema([
           { name: 'Home', path: '/' },
-          { name: 'About', path: '/#/about' },
+          { name: 'About', path: '/about' },
         ]));
         break;
       case 'how-it-works':
@@ -173,7 +173,7 @@ export default function App() {
         injectPageSchema('faq', null);
         injectPageSchema('breadcrumb', breadcrumbSchema([
           { name: 'Home', path: '/' },
-          { name: 'How It Works', path: '/#/how-it-works' },
+          { name: 'How It Works', path: '/how-it-works' },
         ]));
         break;
       case 'faq':
@@ -183,7 +183,7 @@ export default function App() {
         // FAQ schema is injected by the FAQPage component itself
         injectPageSchema('breadcrumb', breadcrumbSchema([
           { name: 'Home', path: '/' },
-          { name: 'FAQ', path: '/#/faq' },
+          { name: 'FAQ', path: '/faq' },
         ]));
         break;
       case 'saved':
@@ -214,7 +214,7 @@ export default function App() {
         injectPageSchema('faq', null);
         injectPageSchema('breadcrumb', breadcrumbSchema([
           { name: 'Home', path: '/' },
-          { name: 'Symptoms', path: '/#/symptoms' },
+          { name: 'Symptoms', path: '/symptoms' },
         ]));
         break;
       case 'locations':
