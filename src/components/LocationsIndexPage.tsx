@@ -17,7 +17,7 @@ export function LocationsIndexPage({ resources, onNavigate }: LocationsIndexPage
     setPageMeta(locationIndexMeta());
     injectPageSchema('breadcrumb', breadcrumbSchema([
       { name: 'Home', path: '/' },
-      { name: 'Locations', path: '/#/locations' },
+      { name: 'Locations', path: '/locations' },
     ]));
     injectPageSchema('itemList', null);
     injectPageSchema('collectionPage', null);
