@@ -160,7 +160,7 @@ export function extractSymptoms(query: string, symptoms: Symptom[]): MatchedSymp
     let matchedKeyword = '';
 
     // Check symptom name
-    const name = symptom.name.toLowerCase();
+    const name = (symptom.name ?? '').toLowerCase();
     if (q.includes(name)) {
       bestScore = Math.max(bestScore, 80);
       matchedKeyword = name;
@@ -170,7 +170,7 @@ export function extractSymptoms(query: string, symptoms: Symptom[]): MatchedSymp
     }
 
     // Check keywords
-    for (const kw of symptom.keywords) {
+    for (const kw of symptom.keywords ?? []) {
       const kwLower = kw.toLowerCase();
       if (q.includes(kwLower)) {
         // Longer keyword matches are more specific → higher score
@@ -189,7 +189,7 @@ export function extractSymptoms(query: string, symptoms: Symptom[]): MatchedSymp
     }
 
     // Check specialties as a weaker signal
-    for (const sp of symptom.specialties) {
+    for (const sp of symptom.specialties ?? []) {
       const spLower = sp.toLowerCase();
       if (q.includes(spLower)) {
         bestScore = Math.max(bestScore, 25);
@@ -222,8 +222,8 @@ export function recommendSpecialty(
 
   // From matched symptoms
   for (const { symptom } of matchedSymptoms) {
-    for (const cat of symptom.category_slugs) categories.add(cat);
-    for (const sp of symptom.specialties) specialties.add(sp);
+    for (const cat of symptom.category_slugs ?? []) categories.add(cat);
+    for (const sp of symptom.specialties ?? []) specialties.add(sp);
   }
 
   // Intent-based category boosts
@@ -255,7 +255,6 @@ export function buildSemanticFilters(
   recommendedCategories: string[],
 ): Partial<HybridFilters> {
   const filters: Partial<HybridFilters> = {};
-  const q = query.toLowerCase();
 
   // Cost intent → financial filters
   if (intent === 'cost') {
@@ -411,7 +410,7 @@ export function reRank(
         r.search_text ?? '',
       ].join(' ').toLowerCase();
 
-      for (const kw of symptom.keywords) {
+      for (const kw of symptom.keywords ?? []) {
         if (resourceText.includes(kw.toLowerCase())) {
           boost += 15;
           break;
@@ -445,7 +444,7 @@ export function reRank(
 
   scored.sort((a, b) => {
     if (b.boost !== a.boost) return b.boost - a.boost;
-    return b.r.rating - a.r.rating;
+    return (b.r.rating ?? 0) - (a.r.rating ?? 0);
   });
 
   return scored.map((x) => x.r);

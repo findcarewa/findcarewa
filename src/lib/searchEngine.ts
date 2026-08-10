@@ -18,7 +18,7 @@ import { isOpenNow } from './format';
 import type { ResourceWithCategory } from './supabase';
 import {
   fuzzyMatch, bestFuzzyMatch, stem, stemTokens,
-  similarity, fuzzyScore,
+  fuzzyScore,
 } from './fuzzy';
 
 // ─── Zip extraction ───────────────────────────────────────────────────────────
@@ -156,14 +156,14 @@ const TYPOS: Record<string, string> = {
   'pediatryc': 'pediatric', 'pediatirc': 'pediatric', 'ped': 'pediatric',
   // General / primary care
   'doctor': 'doctor', 'docter': 'doctor', 'doctr': 'doctor',
-  'physician': 'physician', 'physician': 'physician', 'physcian': 'physician',
+  'physician': 'physician', 'physcian': 'physician',
   'clinic': 'clinic', 'clinik': 'clinic', 'clinc': 'clinic',
   'checkup': 'checkup', 'checkupp': 'checkup',
   'vaccination': 'vaccination', 'vaccinaton': 'vaccination',
   'vaccine': 'vaccine', 'vaccinne': 'vaccine', 'vaccene': 'vaccine',
   'immunization': 'vaccination', 'immunizaton': 'vaccination',
   // Pharmacy
-  'pharmacy': 'pharmacy', 'pharmcy': 'pharmacy', 'pharmacy': 'pharmacy',
+  'pharmacy': 'pharmacy', 'pharmcy': 'pharmacy',
   'pharmacist': 'pharmacy', 'pharmacists': 'pharmacy',
   'prescription': 'prescription', 'prescripton': 'prescription',
   'perscription': 'prescription', 'presription': 'prescription',
@@ -827,7 +827,7 @@ export function hybridSearch(
         if (scored.length > 0) {
           scored.sort((a, b) => {
             if (b.score !== a.score) return b.score - a.score;
-            return b.r.rating - a.r.rating;
+            return (b.r.rating ?? 0) - (a.r.rating ?? 0);
           });
           result = scored.map((x) => x.r);
         } else {
@@ -857,7 +857,7 @@ export function featuredServices(
       const aLang = a.languages.length;
       const bLang = b.languages.length;
       if (aLang !== bLang) return bLang - aLang;
-      return b.rating - a.rating;
+      return (b.rating ?? 0) - (a.rating ?? 0);
     })
     .slice(0, limit);
 }
@@ -873,5 +873,6 @@ export function parseSearchQuery(
   _query: string,
   _categories: { slug: string; name: string }[]
 ): ParsedQuery {
+  void _query; void _categories;
   return { explanation: [], filters: {} };
 }

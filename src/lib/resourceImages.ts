@@ -27,7 +27,7 @@ export interface PlacePhoto {
   width: number;
   height: number;
   attributions: string[];
-  _obj?: any;              // google.maps.places.PlacePhoto instance (Maps JS only)
+  _obj?: google.maps.places.PlacePhoto;  // Maps JS only
 }
 
 export interface PlaceResult {
@@ -130,7 +130,7 @@ async function fetchFromGoogle(resource: ResourceWithCategory): Promise<PlaceRes
     if (!detail) return empty;
 
     const photos: PlacePhoto[] = (detail.photos ?? []).slice(0, 10).map((p) => ({
-      reference:    (p as any).photo_reference ?? '',  // internal ref used by getUrl
+      reference:    '',  // internal ref used by getUrl
       width:        p.width,
       height:       p.height,
       attributions: p.html_attributions ?? [],
