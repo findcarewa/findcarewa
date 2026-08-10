@@ -12,8 +12,8 @@ import {
   setPageMeta, injectSiteSchema, injectPageSchema,
   homeMeta, searchMeta, mapMeta, aboutMeta, howItWorksMeta,
   faqMeta, savedMeta, requestMeta, feedbackMeta,
-  symptomListMeta, symptomDetailMeta, resourceDetailMeta,
-  medicalWebPageSchema, faqSchema, medicalClinicSchema, breadcrumbSchema,
+  symptomListMeta,
+  breadcrumbSchema,
   locationIndexMeta,
 } from './lib/seo';
 import { Navbar } from './components/Navbar';
@@ -35,6 +35,7 @@ import { Footer } from './components/Footer';
 import { HealthMap } from './components/HealthMap';
 import { LocationsIndexPage } from './components/LocationsIndexPage';
 import { LocationPage } from './components/LocationPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
   const { route, navigate } = useRouter();
@@ -45,7 +46,6 @@ export default function App() {
   const [singleResource, setSingleResource] = useState<Resource | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
-  // Load categories + resources on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -78,22 +78,17 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // Handle resource detail route  -  load single resource
   useEffect(() => {
     if (route.name === 'resource') {
-      // Try to find in loaded resources by slug or id
       const found = resources.find((r) => r.slug === route.id || r.id === route.id);
       if (found) {
         setSingleResource(found);
       } else {
-        // Fetch from Supabase
         setSingleResource(null);
         (async () => {
-          // Try slug first, then fall back to id (UUID)
           let query = supabase
             .from('resources')
             .select('*, resource_categories!resources_category_id_fkey(id, name, slug, icon, color)');
-          // UUIDs contain hyphens in specific positions; slugs are kebab-case words
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(route.id);
           if (isUuid) {
             query = query.eq('id', route.id);
@@ -115,12 +110,10 @@ export default function App() {
     navigate({ name: 'search', query });
   }, [navigate]);
 
-  // ── SEO: inject persistent Organization + WebSite schema once ──────────
   useEffect(() => {
     injectSiteSchema();
   }, []);
 
-  // ── SEO: update page metadata + JSON-LD on every route change ──────────
   useEffect(() => {
     let meta;
     switch (route.name) {
@@ -180,7 +173,6 @@ export default function App() {
         meta = faqMeta();
         injectPageSchema('medicalWebPage', null);
         injectPageSchema('medicalClinic', null);
-        // FAQ schema is injected by the FAQPage component itself
         injectPageSchema('breadcrumb', breadcrumbSchema([
           { name: 'Home', path: '/' },
           { name: 'FAQ', path: '/faq' },
@@ -222,18 +214,14 @@ export default function App() {
         injectPageSchema('medicalWebPage', null);
         injectPageSchema('medicalClinic', null);
         injectPageSchema('faq', null);
-        // breadcrumb + itemList handled by LocationsIndexPage component
         break;
       case 'location':
-        // Meta + schema are set by LocationPage component (async data)
         meta = locationIndexMeta();
         break;
       case 'symptom':
-        // Meta + schema are set by SymptomDetail component (async data)
         meta = symptomListMeta();
         break;
       case 'resource':
-        // Meta + schema are set by ResourceDetail component (async data)
         meta = searchMeta();
         break;
       default:
@@ -282,6 +270,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
     <AuthProvider>
     <FavoritesProvider>
     <div className="min-h-screen bg-white">
@@ -306,7 +295,7 @@ export default function App() {
           />
         )}
 
-        {route.name === 'search' && (
+        <div className={route.name === 'search' ? '' : 'hidden'}>
           <SearchPage
             resources={resources}
             categories={categories}
@@ -315,7 +304,7 @@ export default function App() {
             initialCity={route.city}
             onNavigate={navigate}
           />
-        )}
+        </div>
 
         {route.name === 'resource' && (
           <div className="pt-20 lg:pt-24 pb-16 bg-cream-50 min-h-screen">
@@ -345,61 +334,21 @@ export default function App() {
           </div>
         )}
 
-        {route.name === 'request' && (
-          <RequestForm categories={categories} />
-        )}
-
+        {route.name === 'request' && <RequestForm categories={categories} />}
         {route.name === 'feedback' && (
           <FeedbackForm
             resourceId={route.resourceId}
             resource={resources.find((r) => r.id === route.resourceId)}
           />
         )}
-
-        {route.name === 'saved' && (
-          <SavedPage resources={resources} categories={categories} onNavigate={navigate} />
-        )}
-        {route.name === 'how-it-works' && (
-          <HowItWorks onNavigate={navigate} categories={categories} />
-        )}
-
-        {route.name === 'faq' && (
-          <FAQPage onNavigate={navigate} />
-        )}
-        {route.name === 'symptoms' && (
-          <SymptomsPage onNavigate={navigate} />
-        )}
-        {route.name === 'symptom' && (
-          <SymptomDetail
-            slug={route.slug}
-            resources={resources}
-            categories={categories}
-            onNavigate={navigate}
-          />
-        )}
-        {route.name === 'about' && (
-          <AboutPage
-            onNavigate={navigate}
-            totalResources={roundedResources}
-            totalCities={totalCities}
-            totalCounties={totalCounties}
-          />
-        )}
-        {route.name === 'locations' && (
-          <LocationsIndexPage
-            resources={resources}
-            onNavigate={navigate}
-          />
-        )}
-        {route.name === 'location' && (
-          <LocationPage
-            location={route.location}
-            specialty={route.specialty}
-            resources={resources}
-            categories={categories}
-            onNavigate={navigate}
-          />
-        )}
+        {route.name === 'saved' && <SavedPage resources={resources} categories={categories} onNavigate={navigate} />}
+        {route.name === 'how-it-works' && <HowItWorks onNavigate={navigate} categories={categories} />}
+        {route.name === 'faq' && <FAQPage onNavigate={navigate} />}
+        {route.name === 'symptoms' && <SymptomsPage onNavigate={navigate} />}
+        {route.name === 'symptom' && <SymptomDetail slug={route.slug} resources={resources} categories={categories} onNavigate={navigate} />}
+        {route.name === 'about' && <AboutPage onNavigate={navigate} totalResources={roundedResources} totalCities={totalCities} totalCounties={totalCounties} />}
+        {route.name === 'locations' && <LocationsIndexPage resources={resources} onNavigate={navigate} />}
+        {route.name === 'location' && <LocationPage location={route.location} specialty={route.specialty} resources={resources} categories={categories} onNavigate={navigate} />}
       </main>
 
       <Footer onNavigate={navigate} totalResources={roundedResources} />
@@ -407,5 +356,6 @@ export default function App() {
     </div>
     </FavoritesProvider>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
