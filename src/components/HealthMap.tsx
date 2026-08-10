@@ -156,7 +156,7 @@ export function HealthMap({ resources, categories, onNavigate }: HealthMapProps)
       marker.addListener('click', () => {
         setSelected(resource);
         // Pan map toward selected marker (offset left to avoid sidebar covering it)
-        gMap.current?.panTo({ lat: resource.lat! + 0.01, lng: resource.lng! });
+        gMap.current?.panTo({ lat: resource.lat! + 0.01, lng: resource.lng });
       });
 
       markers.current.push(marker);
