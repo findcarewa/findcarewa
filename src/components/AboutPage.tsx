@@ -255,6 +255,8 @@ export function AboutPage({ onNavigate, totalResources, totalCities, totalCounti
             </button>
           </div>
         </div>
+
+
       </div>
     </section>
   );

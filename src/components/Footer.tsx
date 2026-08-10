@@ -71,12 +71,11 @@ export function Footer({ onNavigate, totalResources }: FooterProps) {
           </div>
         </div>
 
-        <div className="mt-10 pt-6 border-t border-primary-800/60 flex flex-col sm:flex-row items-center justify-between gap-3">
+
           <p className="text-xs text-slate-400">
             FindCare provides general guidance and is not a substitute for professional medical advice. In an emergency, call 911.
           </p>
-          <p className="text-xs text-slate-400">Built for Washingtonians who deserve clear, compassionate care navigation.</p>
-        </div>
+          <p className="text-xs text-slate-400 mt-4 sm:mt-0">Built for Washingtonians who deserve clear, compassionate care navigation.</p>
       </div>
     </footer>
   );

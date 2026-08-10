@@ -15,26 +15,26 @@ export function HowItWorks({ onNavigate, categories }: HowItWorksProps) {
   const steps = [
     {
       icon: MessageSquare,
-      title: 'Describe your need',
-      description: 'Search in plain language: "I need a Mandarin-speaking therapist that accepts Medicaid near Bellevue." Our AI understands what you mean.',
+      title: 'Describe what you need',
+      description: 'Search in plain language: "I need a Mandarin-speaking therapist that accepts Medicaid near Bellevue." FindCare understands what you mean.',
       color: 'primary',
     },
     {
       icon: Filter,
-      title: 'AI parses & filters',
-      description: 'We extract the category, language, insurance, location, and service type from your search. No menus, no guessing.',
+      title: 'FindCare identifies criteria',
+      description: 'We extract the service type, language, insurance, location, and cost preferences from your search. No menus, no guessing.',
       color: 'secondary',
     },
     {
       icon: Calendar,
-      title: 'Browse matched resources',
-      description: 'See real facilities near you, filtered to your needs. Switch to the map view to find what\'s closest.',
+      title: 'FindCare searches its database',
+      description: 'Results come from a structured resource database — not generated or invented. Every result is a real, verified Washington State resource.',
       color: 'accent',
     },
     {
       icon: Phone,
-      title: 'Connect directly',
-      description: 'Call, get directions, or visit the website, all from one place. Cost estimator helps you understand what you\'ll pay.',
+      title: 'Review and contact directly',
+      description: 'Call, get directions, or visit the website, all from one place. Always confirm details with the provider before visiting.',
       color: 'success',
     },
   ];
@@ -64,6 +64,13 @@ export function HowItWorks({ onNavigate, categories }: HowItWorksProps) {
           <p className="mt-4 text-lg text-primary-600 max-w-2xl mx-auto">
             No insurance jargon, no phone-tree mazes. Just clear guidance and real resources ready to help, all across Washington State.
           </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-primary-500">
+            <span className="inline-flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5 text-sage-600" />Free to use</span>
+            <span className="text-ink-300">·</span>
+            <span>No diagnosis or medical advice</span>
+            <span className="text-ink-300">·</span>
+            <span>Confirm information directly with providers</span>
+          </div>
         </div>
 
         {/* Steps */}

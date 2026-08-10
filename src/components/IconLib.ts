@@ -56,11 +56,13 @@ import {
   Heartbeat as PhHeartbeat,
   Images as PhImages,
   EnvelopeSimple as PhMail,
+  UserCircle as PhUserCircle,
 } from '@phosphor-icons/react';
 
 import type { IconProps } from '@phosphor-icons/react';
 import { Funnel as PhFilter, Calendar as PhCalendar } from '@phosphor-icons/react';
 import { Globe as PhGlobe, NavigationArrow as PhNavigation, Wheelchair as PhAccessibility, Translate as PhLanguages } from '@phosphor-icons/react';
+import { Database as PhDatabase, ArrowsClockwise as PhRefresh, Lock as PhLock, ChartBar as PhChartBar, Trash as PhTrash, Keyboard as PhKeyboard, TextAa as PhType, MagnifyingGlassPlus as PhZoomIn, SpeakerHigh as PhVolume2, XCircle as PhXCircle } from '@phosphor-icons/react';
 type IconComp = React.ComponentType<IconProps & { weight?: 'regular' | 'bold' | 'fill' | 'thin' | 'light' | 'duotone' }>;
 
 // Re-export all Phosphor icons we use with the names components expect
@@ -134,3 +136,14 @@ export const Navigation: IconComp = PhNavigation;
 export const Accessibility: IconComp = PhAccessibility;
 export const Languages: IconComp = PhLanguages;
 export const Images: IconComp = PhImages;
+export const Database: IconComp = PhDatabase;
+export const RefreshCw: IconComp = PhRefresh;
+export const Lock: IconComp = PhLock;
+export const ChartBar: IconComp = PhChartBar;
+export const Trash: IconComp = PhTrash;
+export const Keyboard: IconComp = PhKeyboard;
+export const Type: IconComp = PhType;
+export const ZoomIn: IconComp = PhZoomIn;
+export const Volume2: IconComp = PhVolume2;
+export const XCircle: IconComp = PhXCircle;
+export const UserCircle: IconComp = PhUserCircle;
