@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Search, X, MapPin, Filter, Layers, Navigation, Clock } from 'lucide-react';
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
+import type { Route } from '../lib/router';
 import { isOpenNow, formatTodayHours } from '../lib/format';
 import { loadGoogleMaps } from '../lib/mapsLoader';
 import { ResourceDetail } from './ResourceDetail';
@@ -57,7 +58,7 @@ function makePinSvg(color: string, size = 34, selected = false): string {
 interface HealthMapProps {
   resources: ResourceWithCategory[];
   categories: ResourceCategory[];
-  onNavigate: (route: any) => void;
+  onNavigate: (route: Route) => void;
 }
 
 export function HealthMap({ resources, categories, onNavigate }: HealthMapProps) {

@@ -16,7 +16,8 @@ import Fuse, { type IFuseOptions, type FuseResult } from 'fuse.js';
 import type { ResourceWithCategory } from './supabase';
 import type { Symptom } from './symptoms';
 import { isOpenNow } from './format';
-import { expandWithSynonyms } from './synonyms';
+import { expandWithSynonyms, detectBodyPartContext } from './synonyms';
+import { analyzeQuery, reRank } from './semanticSearch';
 
 export interface SearchFilters {
   zip?: string;
@@ -127,7 +128,7 @@ function buildSymptomKeywordMap(symptoms: Symptom[]): Map<string, string[]> {
     const slugs = symptom.category_slugs;
     if (!slugs) continue;
     const keywords = [
-      symptom.name.toLowerCase(),
+      (symptom.name ?? '').toLowerCase(),
       ...(symptom.keywords ?? []).map((k) => k.toLowerCase()),
     ];
     for (const slug of slugs) {
@@ -152,25 +153,7 @@ function isCrisisQuery(query: string): boolean {
 
 // ─── Pre-filter: cheap substring check to shrink candidate set ─────────────────
 
-function preFilter(docs: SearchDoc[], queryLower: string): SearchDoc[] {
-  const terms = queryLower.split(/\s+/).filter((t) => t.length >= 2);
-  if (terms.length === 0) return docs;
 
-  return docs.filter((doc) =>
-    terms.some((term) =>
-      doc.name.includes(term) ||
-      doc.description.includes(term) ||
-      doc.services.includes(term) ||
-      doc.specialties.includes(term) ||
-      doc.tags.includes(term) ||
-      doc.city.includes(term) ||
-      doc.county.includes(term) ||
-      doc.categoryName.includes(term) ||
-      doc.searchText.includes(term) ||
-      doc.symptomKeywords.includes(term)
-    )
-  );
-}
 
 // ─── Tiered re-ranking ─────────────────────────────────────────────────────────
 
@@ -210,6 +193,7 @@ export function searchResources(
   index: Fuse<SearchDoc>,
   resources: ResourceWithCategory[],
   filters: SearchFilters,
+  symptoms?: Symptom[],
 ): ResourceWithCategory[] {
   let result = resources;
 
@@ -251,7 +235,31 @@ export function searchResources(
     const textWithoutZip = filters.text.replace(/\b\d{5}\b/g, '').trim();
     if (textWithoutZip.length >= 2) {
       const crisisQuery = isCrisisQuery(textWithoutZip);
-      const expanded = expandWithSynonyms(textWithoutZip);
+      let expanded = expandWithSynonyms(textWithoutZip);
+
+      // Crisis searches use a small, stable vocabulary instead of running
+      // the full symptom matcher after the symptom catalog loads.
+      let semanticAnalysis: ReturnType<typeof analyzeQuery> | null = null;
+      if (crisisQuery) {
+        expanded = 'crisis suicide mental health 988 emergency';
+      } else if (symptoms && symptoms.length > 0) {
+        semanticAnalysis = analyzeQuery(textWithoutZip, symptoms);
+        if (semanticAnalysis.symptoms.length > 0) {
+          const semanticTerms = new Set<string>();
+          for (const { symptom } of semanticAnalysis.symptoms) {
+            for (const kw of symptom.keywords ?? []) semanticTerms.add(kw.toLowerCase());
+            for (const sp of symptom.specialties ?? []) semanticTerms.add(sp.toLowerCase());
+          }
+          for (const catSlug of semanticAnalysis.recommendedCategories) {
+            semanticTerms.add(catSlug.replace(/-/g, ' '));
+          }
+          const existing = new Set(expanded.toLowerCase().split(/\s+/));
+          const additions = [...semanticTerms].filter((t) => !existing.has(t));
+          if (additions.length > 0) {
+            expanded = expanded + ' ' + additions.join(' ');
+          }
+        }
+      }
 
       // Split into individual terms so Fuse searches each word independently
       // (otherwise the entire expanded string is treated as one fuzzy phrase)
@@ -299,6 +307,68 @@ export function searchResources(
       result = rankedIds
         .map((id) => result.find((r) => r.id === id))
         .filter((r): r is ResourceWithCategory => r !== undefined);
+
+      // Semantic re-ranking: boost resources in recommended categories and
+      // with matching specialties. This runs after the Fuse-based ranking
+      // so natural-language queries like "my teeth hurt" surface dental
+      // clinics above generic primary-care results.
+      if (semanticAnalysis && semanticAnalysis.symptoms.length > 0) {
+        result = reRank(result, semanticAnalysis);
+      }
+
+      // Body-part context re-ranking: when the user mentions a body part
+      // (e.g. "my knee has a burning sensation"), boost resources with
+      // matching specialties (orthopedics, physical therapy) and deprioritize
+      // resources that matched only the suppressed sensation word (e.g. a
+      // burn unit matching "burning" when the user meant nerve pain).
+      const bodyContext = detectBodyPartContext(textWithoutZip);
+      if (bodyContext.bodyParts.length > 0 && bodyContext.specialties.length > 0) {
+        const specialtySet = new Set(bodyContext.specialties.map((s) => s.toLowerCase()));
+        const suppressSet = new Set(bodyContext.suppress.map((s) => s.toLowerCase()));
+        result = result.map((r, idx) => {
+          let boost = 0;
+          const rSpecialties = (r.specialties ?? []).map((s) => s.toLowerCase());
+          const rServices = (r.services ?? []).map((s) => s.toLowerCase());
+          const rTags = (r.tags ?? []).map((t) => t.toLowerCase());
+          const rSearchText = (r.search_text ?? '').toLowerCase();
+          const allText = [...rSpecialties, ...rServices, ...rTags, rSearchText].join(' ');
+
+          // Boost resources with matching specialties
+          for (const sp of rSpecialties) {
+            if (specialtySet.has(sp)) { boost += 40; break; }
+          }
+          // Also check if services/tags mention the specialty
+          for (const sp of specialtySet) {
+            if (allText.includes(sp)) { boost += 15; break; }
+          }
+
+          // Deprioritize resources that match ONLY a suppressed sensation word
+          // (e.g. "burn unit" matching "burning" when the user has a body part)
+          if (suppressSet.size > 0) {
+            let onlySuppressedMatch = true;
+            for (const sp of rSpecialties) {
+              if (specialtySet.has(sp)) { onlySuppressedMatch = false; break; }
+            }
+            // Check if the resource name/description contains the suppressed word
+            // but none of the body-part specialties
+            if (onlySuppressedMatch) {
+              const nameLower = (r.name ?? '').toLowerCase();
+              const descLower = (r.description ?? '').toLowerCase();
+              for (const sup of suppressSet) {
+                if ((nameLower.includes(sup) || descLower.includes(sup)) && !allText.includes('orthopedic') && !allText.includes('physical therapy')) {
+                  boost -= 50;
+                  break;
+                }
+              }
+            }
+          }
+
+          return { r, boost, idx };
+        }).sort((a, b) => {
+          if (b.boost !== a.boost) return b.boost - a.boost;
+          return a.idx - b.idx;
+        }).map((x) => x.r);
+      }
     }
   }
 
@@ -318,7 +388,7 @@ export function featuredServices(
       const aOpen = isOpenNow(a.hours) ? 1 : 0;
       const bOpen = isOpenNow(b.hours) ? 1 : 0;
       if (aOpen !== bOpen) return bOpen - aOpen;
-      return b.rating - a.rating;
+      return (b.rating ?? 0) - (a.rating ?? 0);
     })
     .slice(0, limit);
 }
@@ -334,6 +404,7 @@ export function parseSearchQuery(
   _query: string,
   _categories: { slug: string; name: string }[],
 ): ParsedQuery {
+  void _query; void _categories;
   return { explanation: [], filters: {} };
 }
 

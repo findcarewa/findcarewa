@@ -5,6 +5,7 @@ import {
   Languages as LanguagesIcon, Sparkles, MessageSquare,
 } from './IconLib';
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
+import type { Route } from '../lib/router';
 import { useFavorites } from '../lib/favorites';
 import { useAuth } from '../lib/auth';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
@@ -12,7 +13,7 @@ import {
   formatCost, formatHoursList, isOpenNow, formatPhone, formatLanguages,
   getDirectionsUrl, estimateCost,
 } from '../lib/format';
-import { AvatarBadge } from './ResourceImage';
+
 import {
   setPageMeta, injectPageSchema,
   resourceDetailMeta, medicalClinicSchema, breadcrumbSchema,
@@ -22,7 +23,7 @@ interface FacilityDetailProps {
   resource: ResourceWithCategory;
   categories: ResourceCategory[];
   onClose?: () => void;
-  onNavigate: (route: any) => void;
+  onNavigate: (route: Route) => void;
   allResources?: ResourceWithCategory[];
 }
 
@@ -115,7 +116,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate, allR
           {resource.rating > 0 && (
             <div className="absolute bottom-3 right-4 flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/90 backdrop-blur-md">
               <Star className="w-3.5 h-3.5 text-warning-500 fill-warning-500" />
-              <span className="text-xs font-bold text-primary-800">{resource.rating.toFixed(1)}</span>
+              <span className="text-xs font-bold text-primary-800">{(resource.rating ?? 0).toFixed(1)}</span>
             </div>
           )}
         </div>
@@ -343,7 +344,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate, allR
 }
 
 function ActionTile({ href, icon: Icon, label, sub, color, external }: {
-  href: string; icon: any; label: string; sub: string;
+  href: string; icon: React.ComponentType<{ className?: string }>; label: string; sub: string;
   color: ReturnType<typeof getCategoryColor>; external?: boolean;
 }) {
   return (

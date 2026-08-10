@@ -20,11 +20,11 @@ import {
   hasGoogleKey,
   websiteScreenshotUrl,
   SCREENSHOT_PROVIDERS,
-  type ScreenshotProvider,
+
   type PlacePhoto,
   type PlaceResult,
   getAvatarBgColor,
-} from '../lib/resourceImages';
+} from '../lib/resourceImage';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
 
 // ─── Slug → Tailwind colour key ───────────────────────────────────────────────
