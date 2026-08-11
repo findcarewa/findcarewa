@@ -134,7 +134,7 @@ DECLARE
 BEGIN
   SELECT COUNT(*) INTO dup_count FROM (
     SELECT slug FROM resources GROUP BY slug HAVING COUNT(*) > 1
-    ) sub;
+  ) sub;
   IF dup_count > 0 THEN
     RAISE EXCEPTION 'Duplicate slugs still exist after disambiguation: %', dup_count;
   END IF;

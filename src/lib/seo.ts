@@ -16,7 +16,7 @@ export const SITE_URL = 'https://findcarewa.org';
 export const SITE_NAME = 'FindCare';
 export const SITE_TAGLINE = 'Washington State Healthcare Resources';
 export const SITE_DESCRIPTION =
-  'Find free and low-cost healthcare resources across Washington State. Search by symptom, condition, insurance, location, and more.';
+  'FindCare helps Washington residents locate healthcare and community resources by service, location, language, insurance, and cost. Free to use and not a source of medical advice.';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -315,7 +315,7 @@ export function symptomDetailMeta(symptom: SymptomWithDetails): PageMeta {
 export function searchMeta(query?: string, categorySlug?: string, city?: string): PageMeta {
   let title = 'Find Healthcare Resources | FindCare WA';
   let desc =
-    'Search 1,200+ free and low-cost healthcare resources across Washington State by symptom, insurance, location, language, and cost.';
+    'Search 1,200+ free and low-cost healthcare resources across Washington State by service, insurance, location, language, and cost.';
   let path = '/search';
 
   if (categorySlug && city) {

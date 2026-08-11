@@ -24,7 +24,7 @@ import {
   type PlacePhoto,
   type PlaceResult,
   getAvatarBgColor,
-} from '../lib/resourceImage';
+} from '../lib/resourceImages';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
 
 // ─── Slug → Tailwind colour key ───────────────────────────────────────────────

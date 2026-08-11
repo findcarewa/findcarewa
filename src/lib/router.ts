@@ -14,8 +14,8 @@ export type Route =
   | { name: 'symptoms' }
   | { name: 'symptom'; slug: string }
   | { name: 'locations' }
-  | { name: 'location'; location: string; specialty?: string };
-
+  | { name: 'location'; location: string; specialty?: string }
+;
 /**
  * Parse the current URL into a Route.
  * Supports both path-based (`/resource/foo`) and hash-based (`/#/resource/foo`) URLs.

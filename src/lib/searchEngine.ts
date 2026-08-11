@@ -539,7 +539,7 @@ export function expandQuery(rawText: string): ExpandedQuery {
   // should surface crisis lines prominently. Searching "anxiety" or "depression"
   // is NOT a crisis query even though those symptoms used to map to crisis-line.
   const crisisTokens = new Set(['crisis', 'suicidal', 'suicide', 'overdose', 'self harm', 'selfharm', 'self-harm']);
-  const isCrisisQuery = redFlag && matchedCategories.includes('crisis-line') &&
+  const isCrisisQuery = redFlag && matchedCategories.has('crisis-line') &&
     [...crisisTokens].some((t) => normalized.includes(t));
 
   const significantTokens = [...expandedTokens].filter(isSignificant);

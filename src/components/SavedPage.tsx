@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Heart, Search, MapPin, DollarSign, Clock, X } from 'lucide-react';
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
+import type { Route } from '../lib/router';
 import { useFavorites } from '../lib/favorites';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
 import { formatTodayHours, isOpenNow, formatCost } from '../lib/format';
@@ -9,7 +10,7 @@ import { AvatarBadge } from './ResourceImage';
 interface SavedPageProps {
   resources: ResourceWithCategory[];
   categories: ResourceCategory[];
-  onNavigate: (route: any) => void;
+  onNavigate: (route: Route) => void;
 }
 
 export function SavedPage({ resources, categories, onNavigate }: SavedPageProps) {

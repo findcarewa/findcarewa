@@ -7,7 +7,7 @@ import {
 } from './IconLib';
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
 import type { Route } from '../lib/router';
-import { searchResources, buildSearchIndex, extractZip, featuredServices, type SearchFilters } from '../lib/fuseSearch';
+import { hybridSearch, extractZip, featuredServices, type HybridFilters } from '../lib/searchEngine';
 import { fetchSymptoms, type Symptom } from '../lib/symptoms';
 import { analyzeQuery, type SemanticAnalysis } from '../lib/semanticSearch';
 import { useFavorites } from '../lib/favorites';
@@ -42,17 +42,6 @@ export function SearchPage({
   useEffect(() => {
     fetchSymptoms().then(setSymptoms).catch(() => {});
   }, []);
-
-  const searchIndex = useMemo(
-    () => {
-      try {
-        return buildSearchIndex(resources, symptoms);
-      } catch {
-        return buildSearchIndex(resources, []);
-      }
-    },
-    [resources, symptoms],
-  );
 
   const [acceptsMedicaid, setAcceptsMedicaid] = useState(false);
   const [medicare, setMedicare] = useState(false);
@@ -90,7 +79,7 @@ export function SearchPage({
   }, [resources]);
 
   const filtered = useMemo(() => {
-    const filters: SearchFilters = {
+    const filters: HybridFilters = {
       zip: zipFilter || undefined,
       text: deferredSearch || undefined,
       categorySlug: activeCategory,
@@ -101,7 +90,7 @@ export function SearchPage({
       language: language || undefined,
     };
     try {
-      const results = searchResources(searchIndex, resources, filters, symptoms);
+      const results = hybridSearch(resources, filters);
       if (deferredSearch && deferredSearch.trim().length >= 2) return results;
       return [...results].sort((a, b) => {
         const aOpen = isOpenNow(a.hours) ? 1 : 0;
@@ -110,13 +99,13 @@ export function SearchPage({
         return (b.rating ?? 0) - (a.rating ?? 0);
       });
     } catch {
-      // If the semantic pipeline crashes (bad symptom data, etc.),
-      // fall back to plain resource list so the page doesn't white-screen.
+      // If the search pipeline crashes, fall back to plain resource list
+      // so the page doesn't white-screen.
       return [...resources].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
     }
-  }, [resources, searchIndex, activeCategory, county, city, acceptsMedicaid, medicare, acceptsUninsured,
+  }, [resources, activeCategory, county, city, acceptsMedicaid, medicare, acceptsUninsured,
       slidingScale, freeOptions, free, telehealth, walkIns, appointmentsAvailable, openNow,
-      wheelchairAccessible, language, deferredSearch, zipFilter, symptoms]);
+      wheelchairAccessible, language, deferredSearch, zipFilter]);
 
   const handleClear = () => {
     setSearch(''); setZipFilter('');

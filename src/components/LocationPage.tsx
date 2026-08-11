@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-  ArrowRight, MapPin, Search, ChevronDown, Loader2, AlertCircle,
+  ArrowRight, MapPin, Search, ChevronDown,
   Stethoscope, Clock, DollarSign, Heart, Building2,
 } from './IconLib';
 import type { Route } from '../lib/router';
@@ -99,7 +99,7 @@ export function LocationPage({ location, specialty, resources, categories, onNav
       const aOpen = isOpenNow(a.hours) ? 1 : 0;
       const bOpen = isOpenNow(b.hours) ? 1 : 0;
       if (aOpen !== bOpen) return bOpen - aOpen;
-      return b.rating - a.rating;
+      return (b.rating ?? 0) - (a.rating ?? 0);
     });
   }, [displayResources]);
 

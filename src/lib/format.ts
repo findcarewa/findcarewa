@@ -51,8 +51,23 @@ export function formatLanguages(langs: string[]): string {
   return `${langs.slice(0, -1).join(', ')} & ${langs[langs.length - 1]}`;
 }
 
-export function getDirectionsUrl(r: { address: string; city: string; state: string; zip_code: string }): string {
-  const query = encodeURIComponent(`${r.address}, ${r.city}, ${r.state} ${r.zip_code}`);
+export function getDirectionsUrl(r: {
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  google_place_id?: string | null;
+}): string {
+  // Prefer a verified Google Place ID when available — it points to the
+  // exact business listing (e.g. "Central Washington Hospital") rather
+  // than a street address that may land a minute away.
+  if (r.google_place_id) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.google_place_id)}&query_place_id=${encodeURIComponent(r.google_place_id)}`;
+  }
+  // Otherwise search by the facility name + city/state so Google Maps
+  // finds the actual place listing instead of a bare street address.
+  const query = encodeURIComponent(`${r.name}, ${r.city}, ${r.state}`);
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 

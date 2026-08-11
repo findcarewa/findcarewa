@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowRight, AlertCircle, Loader2, Search, ChevronDown, ChevronUp,
-  Stethoscope, Activity, Globe, Heart, Clock, DollarSign, Star,
+  Stethoscope, Activity, Globe, Heart, Clock, DollarSign,
   Brain, Tooth, Eye, HeartPulse, FirstAid, Baby, Pill, Siren,
   ShieldCheck, Warning,
 } from './IconLib';
@@ -106,11 +106,7 @@ export function SymptomDetail({ slug, resources, categories, onNavigate }: Sympt
       .slice(0, 6);
   }, [symptom, resources]);
 
-  const relatedCategories = useMemo(() => {
-    if (!symptom) return [];
-    const catSlugs = new Set(symptom.category_slugs);
-    return categories.filter((c) => catSlugs.has(c.slug));
-  }, [symptom, categories]);
+
 
   if (loading) {
     return (

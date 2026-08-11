@@ -100,7 +100,14 @@ Deno.serve(async (req: Request) => {
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>`;
 
-    return new Response(xml, { status: 200, headers: corsHeaders });
+    const headers = new Headers();
+    headers.set("Content-Type", "application/xml; charset=utf-8");
+    headers.set("Access-Control-Allow-Origin", "*");
+    headers.set("Access-Control-Allow-Methods", "GET, OPTIONS");
+    headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Info, Apikey");
+    headers.set("Cache-Control", "public, max-age=3600");
+
+    return new Response(xml, { status: 200, headers });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     return new Response(`<!-- sitemap generation failed: ${msg} -->`, {

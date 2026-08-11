@@ -68,17 +68,73 @@ export const SYNONYMS: Record<string, string[]> = {
   'meth': ['methamphetamine', 'substance use'],
 
   // Dental
+  'my teeth hurt': ['toothache', 'dental', 'tooth pain'],
+  'teeth hurt': ['toothache', 'dental', 'tooth pain'],
+  'tooth hurts': ['toothache', 'dental', 'tooth pain'],
   'tooth pain': ['toothache', 'dental'],
   'toothache': ['dental', 'tooth'],
   'cavity': ['dental', 'caries'],
   'cavities': ['dental', 'caries'],
   'broken tooth': ['dental', 'oral surgery'],
   'gum pain': ['dental', 'periodontal'],
+  'gums hurt': ['dental', 'periodontal'],
+  'gums bleeding': ['dental', 'periodontal'],
   'wisdom teeth': ['dental', 'oral surgery'],
   'root canal': ['dental', 'endodontics'],
   'teeth cleaning': ['dental', 'prophylaxis'],
   'dentures': ['dental', 'prosthodontics'],
   'braces': ['orthodontics', 'dental'],
+  'teeth': ['dental'],
+  'tooth': ['dental'],
+
+  // Throat / ENT
+  'throat hurts': ['sore throat', 'ent', 'primary care'],
+  'sore throat': ['ent', 'primary care'],
+  'throat pain': ['ent', 'primary care'],
+  'ear hurts': ['ent', 'ear infection'],
+  'ear pain': ['ent', 'ear infection'],
+  'ear infection': ['ent', 'primary care'],
+
+  // Stomach / digestive
+  'stomach hurts': ['abdominal pain', 'primary care', 'gastroenterology'],
+  'stomach ache': ['abdominal pain', 'primary care'],
+  'belly hurts': ['abdominal pain', 'primary care'],
+  'throwing up': ['nausea', 'vomiting', 'primary care'],
+  'feel nauseous': ['nausea', 'primary care'],
+
+  // Head / neuro
+  'head hurts': ['headache', 'primary care', 'neurology'],
+  'my head hurts': ['headache', 'primary care', 'neurology'],
+  'headache': ['primary care', 'neurology'],
+  'migraine': ['neurology', 'primary care'],
+
+  // Skin
+  'my skin': ['dermatology', 'skin'],
+  'skin hurts': ['dermatology', 'skin'],
+  'itchy': ['dermatology', 'skin'],
+
+  // Eyes
+  'my eyes hurt': ['ophthalmology', 'vision', 'eye pain'],
+  'eyes hurt': ['ophthalmology', 'vision', 'eye pain'],
+  'eye hurts': ['ophthalmology', 'vision', 'eye pain'],
+  'blurry eyes': ['ophthalmology', 'vision'],
+
+  // Back / musculoskeletal
+  'my back hurts': ['back pain', 'primary care', 'physical therapy'],
+  'back hurts': ['back pain', 'primary care', 'physical therapy'],
+  'back pain': ['primary care', 'physical therapy'],
+  'my knee hurts': ['orthopedics', 'physical therapy', 'primary care'],
+  'knee hurts': ['orthopedics', 'physical therapy', 'primary care'],
+  'my arm hurts': ['primary care', 'orthopedics'],
+  'arm hurts': ['primary care', 'orthopedics'],
+
+  // Mental health natural-language
+  'feeling sad': ['depression', 'mental health', 'counseling'],
+  'feeling anxious': ['anxiety', 'mental health', 'counseling'],
+  'feeling down': ['depression', 'mental health'],
+  'feeling hopeless': ['depression', 'crisis', 'mental health'],
+  'can t sleep': ['insomnia', 'mental health', 'primary care'],
+  'can t stop worrying': ['anxiety', 'mental health'],
 
   // Respiratory
   'breathing problem': ['respiratory', 'pulmonary'],
@@ -134,9 +190,6 @@ export const SYNONYMS: Record<string, string[]> = {
   'fever': ['primary care', 'urgent care'],
   'infection': ['primary care', 'urgent care'],
   'stomach pain': ['abdominal pain', 'primary care', 'gastroenterology'],
-  'stomach ache': ['abdominal pain', 'primary care'],
-  'headache': ['primary care', 'neurology'],
-  'migraine': ['neurology', 'primary care'],
   'dizzy': ['dizziness', 'primary care'],
   'dizziness': ['primary care', 'neurology'],
   'nausea': ['primary care', 'gastroenterology'],
@@ -235,9 +288,145 @@ export const SYNONYMS: Record<string, string[]> = {
   'assault': ['domestic violence', 'crisis'],
 };
 
+// ─── Body-part → specialty mapping ────────────────────────────────────────────
+// When a user mentions a body part, we know what kind of provider they need
+// regardless of which sensation word they use. This prevents sensation words
+// like "burning" from matching unrelated resources (e.g. a burn unit).
+
+const BODY_PART_SPECIALTIES: Record<string, string[]> = {
+  knee: ['orthopedics', 'physical therapy', 'primary care'],
+  knees: ['orthopedics', 'physical therapy', 'primary care'],
+  leg: ['orthopedics', 'physical therapy', 'primary care'],
+  legs: ['orthopedics', 'physical therapy', 'primary care'],
+  ankle: ['orthopedics', 'physical therapy', 'primary care'],
+  ankles: ['orthopedics', 'physical therapy', 'primary care'],
+  foot: ['orthopedics', 'physical therapy', 'podiatry'],
+  feet: ['orthopedics', 'physical therapy', 'podiatry'],
+  hip: ['orthopedics', 'physical therapy', 'primary care'],
+  hips: ['orthopedics', 'physical therapy', 'primary care'],
+  back: ['orthopedics', 'physical therapy', 'primary care'],
+  spine: ['orthopedics', 'neurology', 'physical therapy'],
+  neck: ['orthopedics', 'physical therapy', 'primary care'],
+  shoulder: ['orthopedics', 'physical therapy', 'primary care'],
+  shoulders: ['orthopedics', 'physical therapy', 'primary care'],
+  arm: ['orthopedics', 'physical therapy', 'primary care'],
+  arms: ['orthopedics', 'physical therapy', 'primary care'],
+  elbow: ['orthopedics', 'physical therapy', 'primary care'],
+  wrist: ['orthopedics', 'physical therapy', 'primary care'],
+  hand: ['orthopedics', 'physical therapy', 'primary care'],
+  hands: ['orthopedics', 'physical therapy', 'primary care'],
+  finger: ['orthopedics', 'primary care'],
+  fingers: ['orthopedics', 'primary care'],
+  joint: ['orthopedics', 'physical therapy', 'rheumatology'],
+  joints: ['orthopedics', 'physical therapy', 'rheumatology'],
+  muscle: ['physical therapy', 'primary care'],
+  muscles: ['physical therapy', 'primary care'],
+  head: ['neurology', 'primary care'],
+  skull: ['neurology', 'primary care'],
+  brain: ['neurology'],
+  eye: ['ophthalmology', 'optometry', 'primary care'],
+  eyes: ['ophthalmology', 'optometry', 'primary care'],
+  ear: ['ent', 'primary care'],
+  ears: ['ent', 'primary care'],
+  nose: ['ent', 'primary care'],
+  throat: ['ent', 'primary care'],
+  chest: ['cardiology', 'primary care', 'pulmonology'],
+  heart: ['cardiology', 'cardiac'],
+  lung: ['pulmonology', 'respiratory'],
+  lungs: ['pulmonology', 'respiratory'],
+  stomach: ['gastroenterology', 'primary care'],
+  belly: ['gastroenterology', 'primary care'],
+  abdomen: ['gastroenterology', 'primary care'],
+  abdominal: ['gastroenterology', 'primary care'],
+  gut: ['gastroenterology', 'primary care'],
+  liver: ['gastroenterology', 'hepatology'],
+  kidney: ['nephrology', 'urology'],
+  kidneys: ['nephrology', 'urology'],
+  bladder: ['urology', 'primary care'],
+  skin: ['dermatology'],
+  scalp: ['dermatology'],
+  face: ['dermatology', 'ent'],
+  mouth: ['dental', 'oral surgery'],
+  tooth: ['dental'],
+  teeth: ['dental'],
+  gum: ['dental', 'periodontal'],
+  gums: ['dental', 'periodontal'],
+  tongue: ['dental', 'ent'],
+  jaw: ['dental', 'ent'],
+  pelvis: ['orthopedics', 'primary care'],
+  ribs: ['orthopedics', 'primary care'],
+  rib: ['orthopedics', 'primary care'],
+};
+
+// Sensation words that are ambiguous — they can describe a body part feeling
+// OR a medical condition. When paired with a body part, they should NOT
+// trigger condition-specific matching (e.g. "burning knee" ≠ burn unit).
+const SENSATION_WORDS = new Set([
+  'burning', 'burn', 'stinging', 'sting', 'tingling', 'numbness', 'numb',
+  'throbbing', 'throb', 'aching', 'ache', 'soreness', 'sore', 'stiffness',
+  'stiff', 'tightness', 'tight', 'cramping', 'cramp', 'spasming', 'spasm',
+  'shooting', 'radiating', 'dull', 'sharp', 'pulsing', 'pulsating',
+  'pins and needles', 'prickling', 'prickle', 'crawling', 'crawling sensation',
+]);
+
+/** Tokens to suppress from the search query when a body part provides context. */
+const SUPPRESS_WHEN_BODY_PART_PRESENT = new Set([
+  'burning', 'burn', 'stinging', 'sting',
+]);
+
+export interface BodyPartContext {
+  /** Specialty terms inferred from body parts mentioned in the query. */
+  specialties: string[];
+  /** Sensation words detected (for interpretation display). */
+  sensations: string[];
+  /** Tokens to suppress because they'd cause false matches (e.g. "burning"). */
+  suppress: string[];
+  /** Body parts detected in the query. */
+  bodyParts: string[];
+}
+
+/**
+ * Detect body parts and sensations in a natural-language query.
+ * Returns specialty expansions and tokens to suppress.
+ */
+export function detectBodyPartContext(query: string): BodyPartContext {
+  const lower = ' ' + query.toLowerCase() + ' ';
+  const specialties = new Set<string>();
+  const sensations: string[] = [];
+  const bodyParts: string[] = [];
+  const suppress = new Set<string>();
+
+  for (const [part, specs] of Object.entries(BODY_PART_SPECIALTIES)) {
+    // Match as a whole word to avoid partial matches (e.g. "arm" in "farm")
+    const wordBoundary = new RegExp(`\\b${part}\\b`, 'i');
+    if (wordBoundary.test(lower)) {
+      bodyParts.push(part);
+      for (const sp of specs) specialties.add(sp);
+    }
+  }
+
+  for (const sensation of SENSATION_WORDS) {
+    if (lower.includes(sensation)) {
+      sensations.push(sensation);
+      if (bodyParts.length > 0 && SUPPRESS_WHEN_BODY_PART_PRESENT.has(sensation)) {
+        suppress.add(sensation);
+      }
+    }
+  }
+
+  return {
+    specialties: [...specialties],
+    sensations,
+    suppress: [...suppress],
+    bodyParts,
+  };
+}
+
 /**
  * Expand a query string with synonyms.
  * Returns the original query plus any synonym expansions appended.
+ * Also applies body-part context to add relevant specialties and suppress
+ * ambiguous sensation words that would cause false matches.
  */
 export function expandWithSynonyms(query: string): string {
   const lower = query.toLowerCase();
@@ -249,6 +438,23 @@ export function expandWithSynonyms(query: string): string {
     }
   }
 
-  if (additions.size === 0) return query;
-  return `${query} ${[...additions].join(' ')}`;
+  // Body-part context: add specialties inferred from body parts
+  const bodyContext = detectBodyPartContext(query);
+  for (const sp of bodyContext.specialties) additions.add(sp);
+
+  // Build the expanded string, suppressing ambiguous tokens when body parts
+  // provide clearer context (e.g. "burning knee" → search for orthopedics,
+  // not burn units)
+  let baseQuery = query;
+  if (bodyContext.suppress.length > 0) {
+    const tokens = baseQuery.toLowerCase().split(/(\s+)/);
+    const filtered = tokens.filter((t) => {
+      const trimmed = t.trim();
+      return !bodyContext.suppress.includes(trimmed);
+    });
+    baseQuery = filtered.join('');
+  }
+
+  if (additions.size === 0 && bodyContext.suppress.length === 0) return query;
+  return `${baseQuery} ${[...additions].join(' ')}`.trim();
 }

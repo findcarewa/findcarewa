@@ -148,9 +148,9 @@ export function searchSymptoms(
 
   const scored = symptoms
     .map((s) => {
-      const name = s.name.toLowerCase();
-      const keywords = s.keywords.map((k) => k.toLowerCase());
-      const specialties = s.specialties.map((sp) => sp.toLowerCase());
+      const name = (s.name ?? '').toLowerCase();
+      const keywords = (s.keywords ?? []).map((k) => k.toLowerCase());
+      const specialties = (s.specialties ?? []).map((sp) => sp.toLowerCase());
 
       let score = 0;
       if (name === q) score += 100;
@@ -188,7 +188,7 @@ export function symptomCategoriesForQuery(
   const categories = new Set<string>();
   let redFlag = false;
   for (const s of matched) {
-    for (const cat of s.category_slugs) categories.add(cat);
+    for (const cat of s.category_slugs ?? []) categories.add(cat);
     if (s.red_flag) redFlag = true;
   }
   return { categories: [...categories], redFlag };

@@ -35,7 +35,7 @@ BEGIN
     -- Check if slug has "-{city}-{city}-" in the middle (followed by street address)
     IF rec.slug ~ ('-' || city_slug || '-' || city_slug || '-') THEN
       -- Remove the first duplicate "{city}-" from the middle
-      new_slug := regexp_replace(rec.slug, '(' || city_slug || ')-' || city_slug || '-', '\\1-', 'g');
+      new_slug := regexp_replace(rec.slug, '(' || city_slug || ')-' || city_slug || '-', '\1-', 'g');
       -- Check if this would collide
       SELECT COUNT(*) INTO dup_count FROM resources WHERE slug = new_slug AND id != rec.id;
       IF dup_count = 0 THEN
