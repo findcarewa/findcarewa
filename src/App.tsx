@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { Loader2, AlertCircle } from './components/IconLib';
 import {
   supabase,
@@ -408,6 +409,7 @@ export default function App() {
 
       <Footer onNavigate={navigate} totalResources={roundedResources} />
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+      <Analytics />
     </div>
     </FavoritesProvider>
     </AuthProvider>
