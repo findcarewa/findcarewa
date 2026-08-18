@@ -1,20 +1,93 @@
+// ─── Hours normalization ───────────────────────────────────────────────────
+// The database contains hours in multiple formats: full day names ("monday"),
+// 12-hour times ("8am-5pm"), inconsistent casing ("closed" vs "Closed"), and
+// 24-hour variants ("24hours", "Open 24 hours"). These functions normalize all
+// of them at read time so the UI and open/closed logic work correctly.
+
+const DAY_KEY_MAP: Record<string, string> = {
+  monday: 'mon', tuesday: 'tue', wednesday: 'wed', thursday: 'thu',
+  friday: 'fri', saturday: 'sat', sunday: 'sun',
+  mon: 'mon', tue: 'tue', wed: 'wed', thu: 'thu',
+  fri: 'fri', sat: 'sat', sun: 'sun',
+};
+
+const VALID_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+function normalizeTimeValue(v: string): string {
+  let s = v.trim();
+
+  if (s.toLowerCase() === 'closed' || s.toLowerCase() === 'close') return 'Closed';
+  if (/^24\s*hours?$/i.test(s) || /^open\s*24\s*hours?$/i.test(s)) return '24hours';
+  const openMatch = s.match(/^open\s+(\d+)\s*hours?$/i);
+  if (openMatch) return `${openMatch[1]}hours`;
+  if (/^\d+hours$/i.test(s)) return s;
+  if (s.toLowerCase() === 'varies') return 'varies';
+
+  if (s.includes(',')) {
+    return s.split(',').map((p) => normalizeTimeValue(p.trim())).join(',');
+  }
+
+  // Convert 12-hour times to 24-hour: "8am" → "8:00", "5pm" → "17:00"
+  s = s.replace(/(\d{1,2})(?::(\d{2}))?(am|pm)/gi, (match, hStr, mStr, ap) => {
+    let h = parseInt(hStr, 10);
+    const m = mStr ? parseInt(mStr, 10) : 0;
+    if (ap.toLowerCase() === 'pm' && h !== 12) h += 12;
+    if (ap.toLowerCase() === 'am' && h === 12) h = 0;
+    return `${h}:${m.toString().padStart(2, '0')}`;
+  });
+
+  s = s.replace(/(am|pm)/gi, '');
+  s = s.replace(/\s*[-\u2013]\s*/g, '-');
+  s = s.replace(/!/g, '');
+
+  // Ensure bare hours have minutes: "8-17" → "8:00-17:00"
+  s = s.replace(/(^|[-,])(\d{1,2})(?=[-,]|$)/g, (_m, pre, h) => `${pre}${h}:00`);
+
+  return s.trim();
+}
+
+const hoursCache = new WeakMap<Record<string, string>, Record<string, string>>();
+
+function normalizeHours(hours: Record<string, string>): Record<string, string> {
+  const cached = hoursCache.get(hours);
+  if (cached) return cached;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(hours)) {
+    const dayKey = DAY_KEY_MAP[k.toLowerCase()] ?? k.toLowerCase();
+    if (!VALID_DAYS.includes(dayKey)) continue;
+    out[dayKey] = normalizeTimeValue(v);
+  }
+  hoursCache.set(hours, out);
+  return out;
+}
+
 export function formatTodayHours(hours: Record<string, string>): string {
   const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const today = days[new Date().getDay()];
-  return hours[today] ?? 'Closed';
+  const normalized = normalizeHours(hours);
+  return normalized[today] ?? 'Closed';
 }
 
 export function isOpenNow(hours: Record<string, string>): boolean {
   const today = formatTodayHours(hours);
-  if (today === 'Closed' || today === '24 hours') return today === '24 hours';
-  const match = today.match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
-  if (!match) return false;
-  const [, startH, startM, endH, endM] = match.map(Number);
+  if (today === 'Closed') return false;
+  if (today === '24hours' || /^\d+hours$/.test(today)) return true;
+  if (today === 'varies') return false;
+
+  // Handle comma-separated ranges (e.g. "8:00-12:00,13:00-17:00")
+  const ranges = today.split(',');
   const now = new Date();
   const currentMin = now.getHours() * 60 + now.getMinutes();
-  const startMin = startH * 60 + startM;
-  const endMin = endH * 60 + endM;
-  return currentMin >= startMin && currentMin <= endMin;
+
+  for (const range of ranges) {
+    const match = range.match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
+    if (!match) continue;
+    const [, startH, startM, endH, endM] = match.map(Number);
+    const startMin = startH * 60 + startM;
+    const endMin = endH * 60 + endM;
+    if (currentMin >= startMin && currentMin <= endMin) return true;
+  }
+  return false;
 }
 
 export function formatHoursList(hours: Record<string, string>): { day: string; hours: string; isToday: boolean }[] {
@@ -29,9 +102,10 @@ export function formatHoursList(hours: Record<string, string>): { day: string; h
   ];
   const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const todayKey = days[new Date().getDay()];
+  const normalized = normalizeHours(hours);
   return entries.map((e) => ({
     day: e.label,
-    hours: hours[e.key] ?? 'Closed',
+    hours: normalized[e.key] ?? 'Closed',
     isToday: e.key === todayKey,
   }));
 }

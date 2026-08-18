@@ -76,6 +76,9 @@ export function trigramSimilarity(a: string, b: string): number {
 
 // ─── Combined fuzzy match ────────────────────────────────────────────────────
 
+const fuzzyCache = new Map<string, number>();
+const FUZZY_CACHE_LIMIT = 4000;
+
 /**
  * Combined fuzzy similarity score — takes the max of Levenshtein ratio and
  * trigram Jaccard. This gives good results across both short words (where
@@ -83,7 +86,13 @@ export function trigramSimilarity(a: string, b: string): number {
  */
 export function fuzzyScore(a: string, b: string): number {
   if (a === b) return 1;
-  return Math.max(similarity(a, b), trigramSimilarity(a, b));
+  const key = a < b ? a + '\u0001' + b : b + '\u0001' + a;
+  const cached = fuzzyCache.get(key);
+  if (cached !== undefined) return cached;
+  const score = Math.max(similarity(a, b), trigramSimilarity(a, b));
+  if (fuzzyCache.size >= FUZZY_CACHE_LIMIT) fuzzyCache.clear();
+  fuzzyCache.set(key, score);
+  return score;
 }
 
 /**

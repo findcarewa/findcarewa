@@ -7,7 +7,7 @@ import {
 } from './IconLib';
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
 import type { Route } from '../lib/router';
-import { hybridSearch, extractZip, featuredServices, type HybridFilters } from '../lib/searchEngine';
+import { hybridSearch, extractZip, extractCity, stripCityFromQuery, featuredServices, type HybridFilters } from '../lib/searchEngine';
 import { fetchSymptoms, type Symptom } from '../lib/symptoms';
 import { analyzeQuery, type SemanticAnalysis } from '../lib/semanticSearch';
 import { useFavorites } from '../lib/favorites';
@@ -72,25 +72,43 @@ export function SearchPage({
     [resources]
   );
 
+  const knownCities = useMemo(
+    () => Array.from(new Set(resources.map((r) => r.city).filter(Boolean))).sort(),
+    [resources]
+  );
+
+  const detectedCity = useMemo(
+    () => extractCity(deferredSearch, knownCities),
+    [deferredSearch, knownCities]
+  );
+
   const allLanguages = useMemo(() => {
     const langs = new Set<string>();
     resources.forEach((r) => r.languages.forEach((l) => langs.add(l)));
     return Array.from(langs).sort();
   }, [resources]);
 
+  const effectiveCity = city || detectedCity || '';
+
+  const searchTextForFilters = useMemo(() => {
+    if (!deferredSearch) return deferredSearch;
+    if (detectedCity) return stripCityFromQuery(deferredSearch, detectedCity);
+    return deferredSearch;
+  }, [deferredSearch, detectedCity]);
+
   const filtered = useMemo(() => {
     const filters: HybridFilters = {
       zip: zipFilter || undefined,
-      text: deferredSearch || undefined,
+      text: searchTextForFilters || undefined,
       categorySlug: activeCategory,
-      city: city || undefined,
+      city: effectiveCity || undefined,
       county: county || undefined,
       acceptsMedicaid, medicare, acceptsUninsured, slidingScale, freeOptions, free,
       telehealth, walkIns, appointmentsAvailable, openNow, wheelchairAccessible,
       language: language || undefined,
     };
     try {
-      const results = hybridSearch(resources, filters);
+      const results = hybridSearch(resources, filters, symptoms);
       if (deferredSearch && deferredSearch.trim().length >= 2) return results;
       return [...results].sort((a, b) => {
         const aOpen = isOpenNow(a.hours) ? 1 : 0;
@@ -103,9 +121,9 @@ export function SearchPage({
       // so the page doesn't white-screen.
       return [...resources].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
     }
-  }, [resources, activeCategory, county, city, acceptsMedicaid, medicare, acceptsUninsured,
+  }, [resources, activeCategory, county, effectiveCity, acceptsMedicaid, medicare, acceptsUninsured,
       slidingScale, freeOptions, free, telehealth, walkIns, appointmentsAvailable, openNow,
-      wheelchairAccessible, language, deferredSearch, zipFilter]);
+      wheelchairAccessible, language, searchTextForFilters, zipFilter, symptoms]);
 
   const handleClear = () => {
     setSearch(''); setZipFilter('');
@@ -121,17 +139,17 @@ export function SearchPage({
     (slidingScale ? 1 : 0) + (freeOptions ? 1 : 0) + (free ? 1 : 0) +
     (telehealth ? 1 : 0) + (walkIns ? 1 : 0) + (appointmentsAvailable ? 1 : 0) +
     (openNow ? 1 : 0) + (wheelchairAccessible ? 1 : 0) +
-    (language ? 1 : 0) + (county ? 1 : 0) + (city ? 1 : 0) + (zipFilter ? 1 : 0);
+    (language ? 1 : 0) + (county ? 1 : 0) + (effectiveCity ? 1 : 0) + (zipFilter ? 1 : 0);
 
   const semanticAnalysis = useMemo<SemanticAnalysis | null>(() => {
-    if (!deferredSearch || deferredSearch.trim().length < 2 || symptoms.length === 0) return null;
+    if (!searchTextForFilters || searchTextForFilters.trim().length < 2 || symptoms.length === 0) return null;
     try {
-      const analysis = analyzeQuery(deferredSearch, symptoms);
-      return analysis.symptoms.length > 0 || (analysis.intent !== 'keyword' && analysis.confidence > 0.5) ? analysis : null;
+      const analysis = analyzeQuery(searchTextForFilters, symptoms);
+      return analysis.symptoms.length > 0 || analysis.redFlag ? analysis : null;
     } catch {
       return null;
     }
-  }, [deferredSearch, symptoms]);
+  }, [searchTextForFilters, symptoms]);
 
   // Instant client-side crisis detection — runs on raw input immediately,
   // before the symptoms DB finishes loading, so crisis banners appear
@@ -178,11 +196,18 @@ export function SearchPage({
           </div>
         </div>
 
-        {zipFilter && (
-          <div className="mb-3">
-            <button onClick={() => setSearch(search.replace(/\b\d{5}\b/g, '').trim())} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-50 border border-sage-200 text-xs font-medium text-sage-700 hover:bg-sage-100 transition-colors">
-              <MapPin className="w-3 h-3" /> Zip {zipFilter} <span className="ml-1 text-sage-400">remove</span>
-            </button>
+        {(zipFilter || (detectedCity && !city)) && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {zipFilter && (
+              <button onClick={() => setSearch(search.replace(/\b\d{5}\b/g, '').trim())} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-50 border border-sage-200 text-xs font-medium text-sage-700 hover:bg-sage-100 transition-colors">
+                <MapPin className="w-3 h-3" /> Zip {zipFilter} <span className="ml-1 text-sage-400">remove</span>
+              </button>
+            )}
+            {detectedCity && !city && (
+              <button onClick={() => setSearch(stripCityFromQuery(search, detectedCity).replace(/\b(in|near|at|around|close to)\b\s*$/i, '').trim())} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sage-50 border border-sage-200 text-xs font-medium text-sage-700 hover:bg-sage-100 transition-colors">
+                <MapPin className="w-3 h-3" /> {detectedCity} <span className="ml-1 text-sage-400">remove</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -293,6 +318,7 @@ export function SearchPage({
                 {activeFilterCount > 0 && <button onClick={handleClear} className="px-4 py-2 rounded-lg bg-primary-700 text-white text-sm font-medium hover:bg-primary-800 transition-all duration-200 ease-out-expo">Remove all filters</button>}
                 {zipFilter && <button onClick={() => setSearch(search.replace(/\b\d{5}\b/g, '').trim())} className="px-4 py-2 rounded-lg bg-cream-200 text-primary-700 text-sm font-medium hover:bg-cream-300 transition-all duration-200 ease-out-expo">Remove zip {zipFilter}</button>}
                 {city && <button onClick={() => setCity('')} className="px-4 py-2 rounded-lg bg-cream-200 text-primary-700 text-sm font-medium hover:bg-cream-300 transition-all duration-200 ease-out-expo">Remove city filter</button>}
+                {detectedCity && !city && <button onClick={() => setSearch(stripCityFromQuery(search, detectedCity).replace(/\b(in|near|at|around|close to)\b\s*$/i, '').trim())} className="px-4 py-2 rounded-lg bg-cream-200 text-primary-700 text-sm font-medium hover:bg-cream-300 transition-all duration-200 ease-out-expo">Remove city {detectedCity}</button>}
                 <button onClick={() => onNavigate({ name: 'search' })} className="px-4 py-2 rounded-lg bg-cream-200 text-primary-700 text-sm font-medium hover:bg-cream-300 transition-all duration-200 ease-out-expo">View statewide resources</button>
                 <button onClick={() => onNavigate({ name: 'request' })} className="px-4 py-2 rounded-lg bg-cream-200 text-primary-700 text-sm font-medium hover:bg-cream-300 transition-all duration-200 ease-out-expo">Suggest a resource</button>
               </div>
