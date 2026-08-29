@@ -1,56 +1,107 @@
 /**
- * Search engine for FindCare WA — a hybrid keyword + semantic search that
- * ranks resources by a tiered scoring system.
+ * Hybrid search engine with fuzzy matching, symptom/condition expansion,
+ * and typo tolerance.
  *
  * Pipeline:
- *  1. Extract zip codes / city names from the query
- *  2. Expand tokens via typo + synonym dictionaries
- *  3. Score each resource across tiers:
+ *  1. Normalize the raw query (lowercase, strip punctuation)
+ *  2. Extract zip codes
+ *  3. Expand synonyms, typos, and symptom→category mappings
+ *  4. Fuzzy token-match against resource corpus with tiered scoring:
  *     exact name > symptom/category > specialty/service > location > corpus
- *  4. Sort by score, then open-now, then rating
+ *  5. Apply boolean attribute filters
+ *
+ * Fuzzy matching uses Levenshtein distance + trigram similarity (see fuzzy.ts)
+ * so the search tolerates typos, variant spellings, and different word forms.
  */
 
-import type { ResourceWithCategory } from './supabase';
-import type { Symptom } from './symptoms';
-import { fuzzyMatch, fuzzyScore, stem } from './fuzzy';
 import { isOpenNow } from './format';
-import { searchSymptoms } from './symptoms';
+import type { ResourceWithCategory } from './supabase';
+import {
+  fuzzyMatch, bestFuzzyMatch, stem, stemTokens,
+  fuzzyScore,
+} from './fuzzy';
 
-// ─── Query extraction helpers ─────────────────────────────────────────────────
+// ─── Per-resource precomputed index ───────────────────────────────────────────
+// Lowercasing, splitting, and stemming every field for every resource on every
+// keystroke is the dominant cost of search. We compute these once per resource
+// and cache the index in a WeakMap keyed by the resource array so it is reused
+// across keystrokes (and freed when the array is replaced).
+
+interface ResourceIndex {
+  name: string;
+  nameWords: string[];
+  nameStems: Set<string>;
+  searchCorpus: string;
+  corpusWords: string[];
+  corpusStems: Set<string>;
+  services: string[];
+  serviceStems: Set<string>;
+  specialties: string[];
+  specialtyStems: Set<string>;
+  tags: string[];
+  tagStems: Set<string>;
+  city: string;
+  county: string;
+  catSlug: string;
+  catName: string;
+  catNameStems: Set<string>;
+  /** Concatenation of all searchable text for a cheap substring pre-filter. */
+  haystack: string;
+}
+
+const indexCache = new WeakMap<ResourceWithCategory[], ResourceIndex[]>();
+
+function buildResourceIndex(resources: ResourceWithCategory[]): ResourceIndex[] {
+  const cached = indexCache.get(resources);
+  if (cached) return cached;
+  const index = resources.map((r) => {
+    const name = (r.name ?? '').toLowerCase();
+    const searchCorpus = (r.search_text ?? '').toLowerCase();
+    const services = (r.services ?? []).map((s) => s.toLowerCase());
+    const specialties = (r.specialties ?? []).map((s) => s.toLowerCase());
+    const tags = (r.tags ?? []).map((t) => t.toLowerCase());
+    const city = (r.city ?? '').toLowerCase();
+    const county = (r.county ?? '').toLowerCase();
+    const catName = (r.resource_categories?.name ?? '').toLowerCase();
+
+    const serviceStems = new Set<string>();
+    for (const s of services) for (const t of stemTokens(s)) serviceStems.add(t);
+    const specialtyStems = new Set<string>();
+    for (const s of specialties) for (const t of stemTokens(s)) specialtyStems.add(t);
+    const tagStems = new Set<string>();
+    for (const t of tags) tagStems.add(stem(t));
+
+    return {
+      name,
+      nameWords: name.split(/\s+/),
+      nameStems: stemTokens(name),
+      searchCorpus,
+      corpusWords: searchCorpus.split(/\s+/).filter((w) => w.length >= 4),
+      corpusStems: stemTokens(searchCorpus),
+      services,
+      serviceStems,
+      specialties,
+      specialtyStems,
+      tags,
+      tagStems,
+      city,
+      county,
+      catSlug: r.resource_categories?.slug ?? '',
+      catName,
+      catNameStems: stemTokens(catName),
+      haystack: `${name} ${searchCorpus} ${services.join(' ')} ${specialties.join(' ')} ${tags.join(' ')} ${city} ${county} ${catName}`,
+    } satisfies ResourceIndex;
+  });
+  indexCache.set(resources, index);
+  return index;
+}
+
+// ─── Zip extraction ───────────────────────────────────────────────────────────
 
 /** Extract a 5-digit US zip code from an arbitrary query string. */
 export function extractZip(query: string): string | null {
   const m = query.match(/\b(\d{5})\b/);
   return m ? m[1] : null;
-}
-
-/** Escape special regex characters in a string so it can be used in a RegExp. */
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, (ch) => '\\' + ch);
-}
-
-/**
- * Extract a city name from a query string by matching against a known list
- * of cities present in the resource data. Handles patterns like
- * "urgent care in bellevue", "dentist near seattle", "clinic spokane".
- * Returns the matched city name (original casing) or null.
- */
-export function extractCity(query: string, knownCities: string[]): string | null {
-  const q = query.toLowerCase();
-  const matched = knownCities.find((city) => {
-    const c = city.toLowerCase();
-    return new RegExp('\\b' + escapeRegex(c) + '\\b').test(q);
-  });
-  return matched ?? null;
-}
-
-/**
- * Remove the city name from a query string so it doesn't participate in
- * text scoring (it's already been applied as a hard filter).
- */
-export function stripCityFromQuery(query: string, city: string): string {
-  const re = new RegExp('\\b' + escapeRegex(city) + '\\b', 'gi');
-  return query.replace(re, '').replace(/\s+/g, ' ').trim();
 }
 
 // ─── Filters interface ────────────────────────────────────────────────────────
@@ -347,374 +398,307 @@ const SYNONYMS: Record<string, string[]> = {
   'vaccination': ['primary care', 'pharmacy', 'vaccine'],
   'vaccine': ['primary care', 'pharmacy', 'vaccine'],
   'shot': ['pharmacy', 'vaccine'],
-  // Insurance / cost
+  // Pharmacy
+  'prescription': ['pharmacy', 'prescription'],
+  'medication': ['pharmacy', 'medication'],
+  'medicine': ['pharmacy', 'medication'],
+  'pills': ['pharmacy', 'medication'],
+  'pharmacist': ['pharmacy'],
+  // Legal
+  'lawyer': ['legal aid', 'legal'],
+  'attorney': ['legal aid', 'legal'],
+  'legalhelp': ['legal aid', 'legal'],
+  'eviction': ['legal aid', 'legal', 'housing'],
+  // Housing / shelter
+  'homeless': ['homeless', 'shelter', 'housing'],
+  'shelter': ['shelter', 'homeless', 'housing'],
+  'housing': ['housing', 'homeless'],
+  'evicted': ['legal aid', 'legal', 'housing'],
+  // Insurance
   'medicaid': ['medicaid', 'apple health'],
   'applehealth': ['medicaid', 'apple health'],
   'medicare': ['medicare'],
-  'free': ['free', 'sliding scale'],
-  'slidingscale': ['sliding scale'],
-  // Accessibility
-  'wheelchair': ['wheelchair accessible'],
-  'disability': ['disability'],
-  // Specialty
-  'chiropractic': ['chiropractic', 'back pain', 'primary care'],
-  'chiropractor': ['chiropractic', 'back pain', 'primary care'],
-  'orthopedic': ['orthopedic', 'primary care'],
-  'podiatry': ['podiatry', 'foot pain', 'primary care'],
+  'uninsured': ['uninsured', 'sliding scale'],
+  'nopinsurance': ['uninsured', 'sliding scale'],
+  // Misc
+  'wheelchair': ['wheelchair', 'accessibility'],
+  'disabled': ['disability', 'accessibility'],
+  'disability': ['disability', 'accessibility'],
+  'senior': ['senior', 'aging', 'elderly'],
+  'elderly': ['senior', 'aging', 'elderly'],
+  'aging': ['senior', 'aging'],
+  'domesticviolence': ['domestic violence', 'dv'],
+  'dv': ['domestic violence', 'dv'],
+  'dialysis': ['dialysis', 'kidney'],
   'physicaltherapy': ['physical therapy', 'rehabilitation'],
+  'pt': ['physical therapy', 'rehabilitation'],
   'rehabilitation': ['rehabilitation', 'physical therapy'],
-  // Pain / body
-  'back': ['back pain', 'primary care', 'physical therapy'],
-  'backpain': ['back pain', 'primary care', 'physical therapy'],
-  'neck': ['neck pain', 'primary care', 'physical therapy'],
-  'joint': ['joint pain', 'arthritis', 'primary care'],
-  'knee': ['knee pain', 'orthopedic', 'primary care'],
-  'shoulder': ['shoulder pain', 'orthopedic', 'primary care'],
-  'headache': ['headache', 'migraine', 'primary care'],
-  'migraine': ['migraine', 'headache', 'neurology', 'primary care'],
-  'arthritis': ['arthritis', 'rheumatology', 'primary care'],
-  'sciatica': ['sciatica', 'back pain', 'nerve pain', 'primary care'],
-  'fibromyalgia': ['fibromyalgia', 'pain', 'primary care'],
-  'sprain': ['sprain', 'orthopedic', 'primary care', 'physical therapy'],
-  'fracture': ['fracture', 'orthopedic', 'urgent care'],
-  'pain': ['pain', 'primary care', 'urgent care'],
-  'ache': ['pain', 'primary care'],
-  'hurts': ['pain', 'primary care', 'urgent care'],
-  'sore': ['pain', 'primary care'],
 };
 
-// ─── Symptom → category mapping ───────────────────────────────────────────────
-// Maps symptom phrases to resource category slugs and keywords so that
-// natural-language symptom searches surface the right provider types.
+// ─── Symptom → category mapping ──────────────────────────────────────────────
 
 interface SymptomMapping {
   match: string;
+  _matchNorm: string;
   categories: string[];
   keywords: string[];
+  redFlag?: boolean;
 }
 
 const SYMPTOM_MAPPINGS: SymptomMapping[] = [
-  // Mental health
-  { match: 'anxiety', categories: ['mental-health'], keywords: ['anxiety', 'mental health', 'counseling', 'therapy'] },
-  { match: 'depression', categories: ['mental-health'], keywords: ['depression', 'mental health', 'counseling', 'therapy'] },
-  { match: 'panic', categories: ['mental-health', 'crisis-line'], keywords: ['panic', 'anxiety', 'mental health', 'crisis'] },
-  { match: 'ptsd', categories: ['mental-health'], keywords: ['ptsd', 'trauma', 'mental health', 'counseling'] },
-  { match: 'trauma', categories: ['mental-health'], keywords: ['trauma', 'mental health', 'counseling'] },
-  { match: 'stress', categories: ['mental-health'], keywords: ['stress', 'mental health', 'counseling'] },
-  { match: 'bipolar', categories: ['mental-health'], keywords: ['bipolar', 'mental health', 'psychiatry'] },
-  { match: 'adhd', categories: ['mental-health', 'pediatrics'], keywords: ['adhd', 'mental health', 'pediatric'] },
-  { match: 'ocd', categories: ['mental-health'], keywords: ['ocd', 'mental health', 'psychiatry'] },
-  { match: 'eating disorder', categories: ['mental-health'], keywords: ['eating disorder', 'mental health', 'counseling'] },
-  { match: 'grief', categories: ['mental-health'], keywords: ['grief', 'mental health', 'counseling'] },
-  // Substance use
-  { match: 'addiction', categories: ['substance-use'], keywords: ['substance use', 'addiction', 'rehabilitation'] },
-  { match: 'alcohol', categories: ['substance-use'], keywords: ['substance use', 'alcohol', 'rehabilitation'] },
-  { match: 'opioid', categories: ['substance-use'], keywords: ['substance use', 'opioid', 'naloxone'] },
-  { match: 'overdose', categories: ['substance-use', 'crisis-line'], keywords: ['substance use', 'overdose', 'naloxone', 'crisis'] },
-  { match: 'naloxone', categories: ['substance-use'], keywords: ['substance use', 'naloxone', 'narcan'] },
-  { match: 'narcan', categories: ['substance-use'], keywords: ['substance use', 'naloxone', 'narcan'] },
-  // Crisis
-  { match: 'suicide', categories: ['crisis-line', 'mental-health'], keywords: ['crisis', 'suicide', 'mental health'] },
-  { match: 'suicidal', categories: ['crisis-line', 'mental-health'], keywords: ['crisis', 'suicide', 'mental health'] },
-  { match: 'crisis', categories: ['crisis-line'], keywords: ['crisis', 'crisis line'] },
-  { match: 'emergency', categories: ['urgent-care', 'hospital', 'crisis-line'], keywords: ['emergency', 'urgent care', 'hospital'] },
-  // Dental
-  { match: 'toothache', categories: ['dental', 'urgent-care'], keywords: ['toothache', 'dental', 'tooth pain'] },
-  { match: 'tooth pain', categories: ['dental', 'urgent-care'], keywords: ['toothache', 'dental', 'tooth pain'] },
-  { match: 'cavity', categories: ['dental'], keywords: ['cavity', 'dental'] },
-  { match: 'broken tooth', categories: ['dental', 'urgent-care'], keywords: ['broken tooth', 'dental', 'emergency'] },
-  { match: 'wisdom teeth', categories: ['dental'], keywords: ['wisdom teeth', 'oral surgery', 'dental'] },
+  // Cardiac — emergency
+  { match: 'chest pain', _matchNorm: 'chest pain', categories: ['hospital'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
+  { match: 'chest tightness', _matchNorm: 'chest tightness', categories: ['hospital'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
+  { match: 'chest pressure', _matchNorm: 'chest pressure', categories: ['hospital'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
+  { match: 'heart attack', _matchNorm: 'heart attack', categories: ['hospital'], keywords: ['cardiac', 'cardiology', 'emergency'], redFlag: true },
+  { match: 'palpitations', _matchNorm: 'palpitations', categories: ['hospital', 'primary-care'], keywords: ['cardiac', 'cardiology'] },
   // Respiratory
-  { match: 'cough', categories: ['primary-care', 'urgent-care'], keywords: ['cough', 'respiratory', 'primary care'] },
-  { match: 'shortness of breath', categories: ['urgent-care', 'hospital'], keywords: ['shortness of breath', 'respiratory', 'emergency'] },
-  { match: 'asthma', categories: ['primary-care', 'urgent-care'], keywords: ['asthma', 'respiratory', 'primary care'] },
-  { match: 'wheezing', categories: ['primary-care', 'urgent-care'], keywords: ['wheezing', 'asthma', 'respiratory'] },
-  { match: 'flu', categories: ['primary-care', 'urgent-care'], keywords: ['flu', 'influenza', 'primary care'] },
-  { match: 'cold', categories: ['primary-care', 'urgent-care'], keywords: ['cold', 'primary care', 'urgent care'] },
-  // Cardiac
-  { match: 'chest pain', categories: ['urgent-care', 'hospital'], keywords: ['chest pain', 'cardiac', 'emergency', 'cardiology'] },
-  { match: 'heart attack', categories: ['hospital', 'urgent-care'], keywords: ['heart attack', 'cardiac', 'emergency'] },
-  { match: 'palpitations', categories: ['primary-care', 'urgent-care'], keywords: ['palpitations', 'cardiac', 'cardiology'] },
+  { match: 'shortness of breath', _matchNorm: 'shortness of breath', categories: ['hospital', 'primary-care'], keywords: ['respiratory', 'pulmonary'], redFlag: true },
+  { match: 'breathing problem', _matchNorm: 'breathing problem', categories: ['hospital', 'primary-care'], keywords: ['respiratory', 'pulmonary'] },
+  { match: 'wheezing', _matchNorm: 'wheezing', categories: ['primary-care'], keywords: ['respiratory', 'pulmonary', 'asthma'] },
+  { match: 'asthma', _matchNorm: 'asthma', categories: ['primary-care'], keywords: ['respiratory', 'pulmonary', 'asthma'] },
+  { match: 'cough', _matchNorm: 'cough', categories: ['primary-care'], keywords: ['respiratory', 'pulmonary'] },
+  // Mental health
+  { match: 'anxiety', _matchNorm: 'anxiety', categories: ['mental-health'], keywords: ['anxiety', 'counseling', 'therapy'] },
+  { match: 'depression', _matchNorm: 'depression', categories: ['mental-health'], keywords: ['depression', 'counseling', 'therapy'] },
+  { match: 'panic attack', _matchNorm: 'panic attack', categories: ['mental-health'], keywords: ['panic', 'anxiety', 'counseling'] },
+  { match: 'ptsd', _matchNorm: 'ptsd', categories: ['mental-health', 'veterans'], keywords: ['trauma', 'counseling', 'therapy'] },
+  { match: 'trauma', _matchNorm: 'trauma', categories: ['mental-health'], keywords: ['trauma', 'counseling', 'therapy'] },
+  { match: 'stress', _matchNorm: 'stress', categories: ['mental-health'], keywords: ['stress', 'counseling'] },
+  { match: 'grief', _matchNorm: 'grief', categories: ['mental-health'], keywords: ['grief', 'counseling'] },
+  { match: 'bipolar', _matchNorm: 'bipolar', categories: ['mental-health'], keywords: ['bipolar', 'psychiatry'] },
+  { match: 'adhd', _matchNorm: 'adhd', categories: ['mental-health', 'pediatrics'], keywords: ['adhd', 'psychiatry'] },
+  { match: 'ocd', _matchNorm: 'ocd', categories: ['mental-health'], keywords: ['ocd', 'psychiatry'] },
+  { match: 'eating disorder', _matchNorm: 'eating disorder', categories: ['mental-health'], keywords: ['eating disorder', 'counseling'] },
+  // Crisis
+  { match: 'suicidal', _matchNorm: 'suicidal', categories: ['crisis-line', 'mental-health'], keywords: ['crisis', 'suicide', 'mental health'], redFlag: true },
+  { match: 'suicide', _matchNorm: 'suicide', categories: ['crisis-line', 'mental-health'], keywords: ['crisis', 'suicide', 'mental health'], redFlag: true },
+  { match: 'overdose', _matchNorm: 'overdose', categories: ['crisis-line', 'substance-use'], keywords: ['crisis', 'overdose', 'substance use'], redFlag: true },
+  { match: 'self harm', _matchNorm: 'self harm', categories: ['crisis-line', 'mental-health'], keywords: ['crisis', 'self harm', 'mental health'], redFlag: true },
+  // Substance use
+  { match: 'addiction', _matchNorm: 'addiction', categories: ['substance-use', 'mental-health'], keywords: ['substance use', 'addiction', 'recovery'] },
+  { match: 'alcoholism', _matchNorm: 'alcoholism', categories: ['substance-use', 'mental-health'], keywords: ['substance use', 'alcohol', 'recovery'] },
+  { match: 'drug problem', _matchNorm: 'drug problem', categories: ['substance-use', 'mental-health'], keywords: ['substance use', 'addiction'] },
+  { match: 'opioid', _matchNorm: 'opioid', categories: ['substance-use'], keywords: ['substance use', 'opioid', 'naloxone'] },
+  // Dental
+  { match: 'tooth pain', _matchNorm: 'tooth pain', categories: ['dental'], keywords: ['dental', 'tooth', 'dentist'] },
+  { match: 'toothache', _matchNorm: 'toothache', categories: ['dental'], keywords: ['dental', 'tooth', 'dentist'] },
+  { match: 'cavity', _matchNorm: 'cavity', categories: ['dental'], keywords: ['dental', 'cavity'] },
+  { match: 'broken tooth', _matchNorm: 'broken tooth', categories: ['dental'], keywords: ['dental', 'oral surgery'] },
+  { match: 'gum pain', _matchNorm: 'gum pain', categories: ['dental'], keywords: ['dental', 'periodontal'] },
   // Skin
-  { match: 'rash', categories: ['primary-care', 'urgent-care'], keywords: ['rash', 'dermatology', 'skin', 'primary care'] },
-  { match: 'eczema', categories: ['primary-care'], keywords: ['eczema', 'dermatology', 'skin'] },
-  { match: 'acne', categories: ['primary-care'], keywords: ['acne', 'dermatology', 'skin'] },
-  { match: 'hives', categories: ['primary-care', 'urgent-care'], keywords: ['hives', 'dermatology', 'skin'] },
+  { match: 'rash', _matchNorm: 'rash', categories: ['primary-care'], keywords: ['dermatology', 'skin'] },
+  { match: 'skin problem', _matchNorm: 'skin problem', categories: ['primary-care'], keywords: ['dermatology', 'skin'] },
+  { match: 'acne', _matchNorm: 'acne', categories: ['primary-care'], keywords: ['dermatology', 'skin'] },
+  { match: 'eczema', _matchNorm: 'eczema', categories: ['primary-care'], keywords: ['dermatology', 'skin'] },
   // Vision
-  { match: 'eye pain', categories: ['primary-care', 'urgent-care'], keywords: ['eye pain', 'vision', 'ophthalmology'] },
-  { match: 'blurred vision', categories: ['primary-care'], keywords: ['blurred vision', 'vision', 'ophthalmology'] },
-  { match: 'pink eye', categories: ['primary-care', 'urgent-care'], keywords: ['pink eye', 'conjunctivitis', 'vision'] },
-  // Pregnancy / women's health
-  { match: 'pregnant', categories: ['fqhc', 'primary-care'], keywords: ['pregnancy', 'prenatal', 'obstetrics', 'womens health'] },
-  { match: 'pregnancy', categories: ['fqhc', 'primary-care'], keywords: ['pregnancy', 'prenatal', 'obstetrics', 'womens health'] },
-  { match: 'prenatal', categories: ['fqhc', 'primary-care'], keywords: ['prenatal', 'obstetrics', 'womens health'] },
+  { match: 'eye pain', _matchNorm: 'eye pain', categories: ['primary-care'], keywords: ['ophthalmology', 'vision'] },
+  { match: 'vision problem', _matchNorm: 'vision problem', categories: ['primary-care'], keywords: ['ophthalmology', 'optometry', 'vision'] },
+  // Pregnancy
+  { match: 'pregnant', _matchNorm: 'pregnant', categories: ['primary-care', 'fqhc'], keywords: ['obstetrics', 'prenatal', 'womens health'] },
+  { match: 'pregnancy', _matchNorm: 'pregnancy', categories: ['primary-care', 'fqhc'], keywords: ['obstetrics', 'prenatal', 'womens health'] },
+  { match: 'prenatal', _matchNorm: 'prenatal', categories: ['primary-care', 'fqhc'], keywords: ['prenatal', 'obstetrics'] },
   // Children
-  { match: 'child fever', categories: ['pediatrics', 'urgent-care'], keywords: ['fever', 'pediatric', 'children'] },
-  { match: 'baby fever', categories: ['pediatrics', 'urgent-care'], keywords: ['fever', 'pediatric', 'infant'] },
-  { match: 'kid sick', categories: ['pediatrics', 'urgent-care'], keywords: ['sick', 'pediatric', 'children'] },
-  // General symptoms
-  { match: 'fever', categories: ['primary-care', 'urgent-care'], keywords: ['fever', 'primary care', 'urgent care'] },
-  { match: 'nausea', categories: ['primary-care', 'urgent-care'], keywords: ['nausea', 'primary care', 'urgent care'] },
-  { match: 'vomiting', categories: ['primary-care', 'urgent-care'], keywords: ['vomiting', 'primary care', 'urgent care'] },
-  { match: 'dizziness', categories: ['primary-care', 'urgent-care'], keywords: ['dizziness', 'dizzy', 'primary care'] },
-  { match: 'fatigue', categories: ['primary-care'], keywords: ['fatigue', 'tired', 'primary care'] },
-  { match: 'infection', categories: ['primary-care', 'urgent-care'], keywords: ['infection', 'primary care', 'urgent care'] },
-  { match: 'swollen', categories: ['primary-care', 'urgent-care'], keywords: ['swollen', 'swelling', 'primary care'] },
+  { match: 'sick child', _matchNorm: 'sick child', categories: ['pediatrics', 'primary-care'], keywords: ['pediatric', 'children'] },
+  { match: 'baby fever', _matchNorm: 'baby fever', categories: ['pediatrics', 'primary-care'], keywords: ['pediatric', 'fever'], redFlag: true },
+  // General
+  { match: 'fever', _matchNorm: 'fever', categories: ['primary-care'], keywords: ['urgent care', 'primary care'] },
+  { match: 'flu', _matchNorm: 'flu', categories: ['primary-care'], keywords: ['flu', 'urgent care'] },
+  { match: 'cold', _matchNorm: 'cold', categories: ['primary-care'], keywords: ['urgent care', 'primary care'] },
+  { match: 'infection', _matchNorm: 'infection', categories: ['primary-care'], keywords: ['urgent care', 'primary care'] },
+  { match: 'vaccination', _matchNorm: 'vaccination', categories: ['primary-care', 'pharmacy'], keywords: ['vaccine', 'imunization'] },
+  // Food
+  { match: 'hungry', _matchNorm: 'hungry', categories: ['food-bank'], keywords: ['food bank', 'food'] },
+  { match: 'no food', _matchNorm: 'no food', categories: ['food-bank'], keywords: ['food bank', 'food'] },
+  // Housing
+  { match: 'homeless', _matchNorm: 'homeless', categories: ['community-org'], keywords: ['homeless', 'shelter', 'housing'] },
+  { match: 'eviction', _matchNorm: 'eviction', categories: ['legal-aid', 'community-org'], keywords: ['legal aid', 'eviction', 'housing'] },
   // Veterans
-  { match: 'veteran', categories: ['veterans', 'mental-health'], keywords: ['veterans', 'va'] },
-  // Pain / musculoskeletal
-  { match: 'back pain', categories: ['primary-care', 'fqhc'], keywords: ['back pain', 'primary care', 'chiropractic', 'physical therapy'] },
-  { match: 'back hurts', categories: ['primary-care', 'fqhc'], keywords: ['back pain', 'primary care', 'chiropractic', 'physical therapy'] },
-  { match: 'lower back', categories: ['primary-care', 'fqhc'], keywords: ['back pain', 'primary care', 'physical therapy'] },
-  { match: 'neck pain', categories: ['primary-care', 'fqhc'], keywords: ['neck pain', 'primary care', 'chiropractic', 'physical therapy'] },
-  { match: 'neck hurts', categories: ['primary-care', 'fqhc'], keywords: ['neck pain', 'primary care', 'physical therapy'] },
-  { match: 'joint pain', categories: ['primary-care', 'fqhc'], keywords: ['joint pain', 'arthritis', 'primary care', 'physical therapy'] },
-  { match: 'knee pain', categories: ['primary-care', 'fqhc'], keywords: ['knee pain', 'orthopedic', 'primary care', 'physical therapy'] },
-  { match: 'knee hurts', categories: ['primary-care', 'fqhc'], keywords: ['knee pain', 'orthopedic', 'primary care'] },
-  { match: 'shoulder pain', categories: ['primary-care', 'fqhc'], keywords: ['shoulder pain', 'orthopedic', 'primary care', 'physical therapy'] },
-  { match: 'arm pain', categories: ['primary-care', 'fqhc'], keywords: ['arm pain', 'primary care', 'physical therapy'] },
-  { match: 'leg pain', categories: ['primary-care', 'fqhc'], keywords: ['leg pain', 'primary care', 'physical therapy'] },
-  { match: 'hip pain', categories: ['primary-care', 'fqhc'], keywords: ['hip pain', 'orthopedic', 'primary care'] },
-  { match: 'arthritis', categories: ['primary-care', 'fqhc'], keywords: ['arthritis', 'rheumatology', 'primary care'] },
-  { match: 'muscle pain', categories: ['primary-care', 'fqhc'], keywords: ['muscle pain', 'primary care', 'physical therapy'] },
-  { match: 'muscle ache', categories: ['primary-care', 'fqhc'], keywords: ['muscle pain', 'primary care'] },
-  { match: 'body pain', categories: ['primary-care', 'fqhc'], keywords: ['pain', 'primary care'] },
-  { match: 'body aches', categories: ['primary-care', 'fqhc'], keywords: ['pain', 'primary care', 'flu'] },
-  { match: 'headache', categories: ['primary-care', 'urgent-care'], keywords: ['headache', 'migraine', 'primary care'] },
-  { match: 'head pain', categories: ['primary-care', 'urgent-care'], keywords: ['headache', 'head pain', 'primary care'] },
-  { match: 'migraine', categories: ['primary-care', 'urgent-care'], keywords: ['migraine', 'headache', 'neurology', 'primary care'] },
-  { match: 'stomach pain', categories: ['primary-care', 'urgent-care'], keywords: ['abdominal pain', 'stomach pain', 'primary care'] },
-  { match: 'stomach ache', categories: ['primary-care', 'urgent-care'], keywords: ['abdominal pain', 'stomach pain', 'primary care'] },
-  { match: 'stomach hurts', categories: ['primary-care', 'urgent-care'], keywords: ['abdominal pain', 'stomach pain', 'primary care'] },
-  { match: 'abdominal pain', categories: ['primary-care', 'urgent-care'], keywords: ['abdominal pain', 'primary care'] },
-  { match: 'ear pain', categories: ['primary-care', 'urgent-care'], keywords: ['ear pain', 'ear infection', 'primary care'] },
-  { match: 'ear ache', categories: ['primary-care', 'urgent-care'], keywords: ['ear pain', 'ear infection', 'primary care'] },
-  { match: 'ear hurts', categories: ['primary-care', 'urgent-care'], keywords: ['ear pain', 'ear infection', 'primary care'] },
-  { match: 'throat pain', categories: ['primary-care', 'urgent-care'], keywords: ['throat pain', 'sore throat', 'primary care'] },
-  { match: 'sore throat', categories: ['primary-care', 'urgent-care'], keywords: ['sore throat', 'throat pain', 'primary care'] },
-  { match: 'throat hurts', categories: ['primary-care', 'urgent-care'], keywords: ['sore throat', 'primary care'] },
-  { match: 'foot pain', categories: ['primary-care', 'fqhc'], keywords: ['foot pain', 'podiatry', 'primary care'] },
-  { match: 'hand pain', categories: ['primary-care', 'fqhc'], keywords: ['hand pain', 'primary care', 'orthopedic'] },
-  { match: 'nerve pain', categories: ['primary-care', 'fqhc'], keywords: ['nerve pain', 'neurology', 'primary care'] },
-  { match: 'sciatica', categories: ['primary-care', 'fqhc'], keywords: ['sciatica', 'back pain', 'nerve pain', 'primary care'] },
-  { match: 'fibromyalgia', categories: ['primary-care', 'fqhc'], keywords: ['fibromyalgia', 'pain', 'primary care'] },
-  { match: 'sprain', categories: ['primary-care', 'urgent-care'], keywords: ['sprain', 'orthopedic', 'primary care', 'physical therapy'] },
-  { match: 'strain', categories: ['primary-care', 'urgent-care'], keywords: ['strain', 'primary care', 'physical therapy'] },
-  { match: 'broken bone', categories: ['urgent-care', 'hospital'], keywords: ['fracture', 'orthopedic', 'urgent care'] },
-  { match: 'fracture', categories: ['urgent-care', 'hospital'], keywords: ['fracture', 'orthopedic', 'urgent care'] },
-  // General pain / "hurts" catch-all — maps to primary care so any body part
-  // pain search returns primary care, FQHC, and urgent care clinics instead of
-  // only niche specialists like chiropractors.
-  { match: 'hurts', categories: ['primary-care', 'fqhc', 'urgent-care'], keywords: ['pain', 'primary care', 'urgent care'] },
-  { match: 'pain', categories: ['primary-care', 'fqhc', 'urgent-care'], keywords: ['pain', 'primary care', 'urgent care'] },
-  { match: 'ache', categories: ['primary-care', 'fqhc'], keywords: ['pain', 'primary care'] },
-  { match: 'sore', categories: ['primary-care', 'fqhc'], keywords: ['pain', 'primary care'] },
+  { match: 'veteran', _matchNorm: 'veteran', categories: ['veterans', 'mental-health'], keywords: ['veterans', 'va'] },
 ];
-
-// ─── Crisis keywords ──────────────────────────────────────────────────────────
-
-const CRISIS_KEYWORDS = new Set([
-  'suicide', 'suicidal', 'kill myself', 'end my life', 'overdose', 'overdosing',
-  'self harm', 'self-harm', 'cutting', 'crisis', 'mental health crisis',
-  'panic attack', 'cant breathe', "can't breathe", 'dying', 'hopeless',
-  'help me', 'emergency', 'raped', 'assaulted', 'domestic violence',
-]);
-
-function detectCrisisKeywords(query: string): boolean {
-  const q = query.toLowerCase();
-  for (const kw of CRISIS_KEYWORDS) {
-    if (q.includes(kw)) return true;
-  }
-  return false;
-}
 
 // ─── Query expansion ──────────────────────────────────────────────────────────
 
-const FUZZY_THRESHOLD = 0.75;
-
-interface ExpandedQuery {
+export interface ExpandedQuery {
+  normalized: string;
   tokens: string[];
   stemmedTokens: Set<string>;
   matchedCategories: string[];
+  matchedKeywords: string[];
+  redFlag: boolean;
   isCrisisQuery: boolean;
 }
 
-function stemTokens(s: string): string[] {
-  return tokenize(s).filter(isSignificant).map(stem);
-}
+/**
+ * Normalize, correct typos, expand synonyms, and apply symptom mappings.
+ */
+// Precompute the typo dictionary keys once at module load instead of on
+// every keystroke.
+const TYPO_KEYS = Object.keys(TYPOS);
 
-function bestFuzzyMatch(query: string, candidates: string[], threshold: number): number {
-  let best = 0;
-  for (const c of candidates) {
-    const score = fuzzyScore(query, c);
-    if (score > best) best = score;
-  }
-  return best >= threshold ? best : 0;
-}
+// Memoize query expansion by normalized text. While typing, the user often
+// pauses mid-word; the same (or nearly same) query is re-expanded repeatedly.
+const expandCache = new Map<string, ExpandedQuery>();
+const EXPAND_CACHE_LIMIT = 256;
 
-function expandQuery(raw: string): ExpandedQuery {
-  const normalized = normalizeQuery(raw);
-  const isCrisisQuery = detectCrisisKeywords(normalized);
-  const rawTokens = tokenize(normalized);
-  const tokens: string[] = [];
-  const stemmedTokens = new Set<string>();
-  const matchedCategories = new Set<string>();
+export function expandQuery(rawText: string): ExpandedQuery {
+  const normalized = normalizeQuery(rawText);
+  const cached = expandCache.get(normalized);
+  if (cached) return cached;
 
-  for (const token of rawTokens) {
-    if (!isSignificant(token)) continue;
+  let baseTokens = tokenize(normalized);
 
-    // Apply typo correction
-    const corrected = TYPOS[token] ?? token;
+  // Typo correction — replace misspelled tokens with canonical forms
+  baseTokens = baseTokens.map((t) => TYPOS[t] ?? t);
 
-    // Apply synonym expansion
-    const synonyms = SYNONYMS[corrected];
-    if (synonyms) {
-      for (const syn of synonyms) {
-        for (const sub of syn.split(' ')) {
-          if (isSignificant(sub)) {
-            tokens.push(sub);
-            stemmedTokens.add(stem(sub));
-          }
-        }
+  // Also try fuzzy typo correction for tokens not in the dictionary
+  baseTokens = baseTokens.map((t) => {
+    if (SYNONYMS[t] || TYPOS[t]) return t;
+    // Check if token is a fuzzy match for any known typo key
+    for (const typoKey of TYPO_KEYS) {
+      if (fuzzyMatch(t, typoKey, 0.85)) return TYPOS[typoKey];
+    }
+    return t;
+  });
+
+  // Single-word synonym expansion
+  const expandedTokens = new Set<string>();
+  for (const token of baseTokens) {
+    expandedTokens.add(token);
+    const syn = SYNONYMS[token];
+    if (syn) {
+      for (const s of syn) {
+        for (const sub of s.split(' ')) expandedTokens.add(sub);
       }
     }
-
-    tokens.push(corrected);
-    stemmedTokens.add(stem(corrected));
   }
 
-  // Check symptom mappings for multi-word phrases
-  const lowerQuery = normalized;
+  // Multi-word symptom mapping (check the normalized string for phrases)
+  const matchedCategories = new Set<string>();
+  const matchedKeywords = new Set<string>();
+  let redFlag = false;
+
   for (const mapping of SYMPTOM_MAPPINGS) {
-    if (lowerQuery.includes(mapping.match)) {
+    const matchNorm = mapping._matchNorm;
+    if (normalized.includes(matchNorm)) {
       for (const cat of mapping.categories) matchedCategories.add(cat);
       for (const kw of mapping.keywords) {
-        for (const sub of kw.split(' ')) {
-          if (isSignificant(sub)) {
-            tokens.push(sub);
-            stemmedTokens.add(stem(sub));
-          }
+        matchedKeywords.add(kw);
+        for (const sub of kw.split(' ')) expandedTokens.add(sub);
+      }
+      if (mapping.redFlag) redFlag = true;
+    }
+    // Also try fuzzy phrase matching for multi-word symptoms
+    if (normalized.split(' ').length >= matchNorm.split(' ').length) {
+      const fuzzyPhraseScore = fuzzyScore(normalized, matchNorm);
+      if (fuzzyPhraseScore >= 0.85 && !normalized.includes(matchNorm)) {
+        for (const cat of mapping.categories) matchedCategories.add(cat);
+        for (const kw of mapping.keywords) {
+          matchedKeywords.add(kw);
+          for (const sub of kw.split(' ')) expandedTokens.add(sub);
         }
+        if (mapping.redFlag) redFlag = true;
       }
     }
   }
 
-  return {
-    tokens: [...new Set(tokens)],
+  // Also check single-word symptom mappings via the synonym table
+  for (const token of baseTokens) {
+    const syn = SYNONYMS[token];
+    if (syn) {
+      for (const s of syn) {
+        const lower = s.toLowerCase();
+        if (lower.includes('emergency') || lower.includes('hospital')) matchedCategories.add('hospital');
+        if (lower.includes('mental health')) matchedCategories.add('mental-health');
+        if (lower.includes('dental')) matchedCategories.add('dental');
+        if (lower.includes('substance use')) matchedCategories.add('substance-use');
+        if (lower.includes('food')) matchedCategories.add('food-bank');
+        if (lower.includes('transportation')) matchedCategories.add('transportation');
+        if (lower.includes('veterans') || lower.includes('va')) matchedCategories.add('veterans');
+        if (lower.includes('legal')) matchedCategories.add('legal-aid');
+        if (lower.includes('pharmacy')) matchedCategories.add('pharmacy');
+        if (lower.includes('pediatric')) matchedCategories.add('pediatrics');
+        if (lower.includes('crisis')) matchedCategories.add('crisis-line');
+      }
+    }
+  }
+
+  // Determine if this is a genuine crisis query — only true crisis queries
+  // should surface crisis lines prominently. Searching "anxiety" or "depression"
+  // is NOT a crisis query even though those symptoms used to map to crisis-line.
+  const crisisTokens = new Set(['crisis', 'suicidal', 'suicide', 'overdose', 'self harm', 'selfharm', 'self-harm']);
+  const isCrisisQuery = redFlag && matchedCategories.has('crisis-line') &&
+    [...crisisTokens].some((t) => normalized.includes(t));
+
+  const significantTokens = [...expandedTokens].filter(isSignificant);
+  const stemmedTokens = new Set<string>();
+  for (const t of significantTokens) stemmedTokens.add(stem(t));
+
+  const result: ExpandedQuery = {
+    normalized,
+    tokens: significantTokens,
     stemmedTokens,
     matchedCategories: [...matchedCategories],
+    matchedKeywords: [...matchedKeywords],
+    redFlag,
     isCrisisQuery,
   };
+  if (expandCache.size >= EXPAND_CACHE_LIMIT) expandCache.clear();
+  expandCache.set(normalized, result);
+  return result;
 }
 
-// ─── Resource indexing ────────────────────────────────────────────────────────
+// ─── Tiered scoring with fuzzy matching ──────────────────────────────────────
 
 const TIER_NAME = 100;
 const TIER_SYMPTOM_CATEGORY = 60;
 const TIER_SPECIALTY_SERVICE = 40;
-const TIER_TAG = 25;
-const TIER_LOCATION = 20;
-const TIER_CORPUS = 10;
+const TIER_TAG = 20;
+const TIER_LOCATION = 10;
+const TIER_CORPUS = 5;
 
-interface ResourceIndex {
-  name: string;
-  nameWords: string[];
-  nameStems: Set<string>;
-  searchCorpus: string;
-  corpusWords: string[];
-  corpusStems: Set<string>;
-  services: string[];
-  serviceStems: Set<string>;
-  specialties: string[];
-  specialtyStems: Set<string>;
-  tags: string[];
-  tagStems: Set<string>;
-  city: string;
-  county: string;
-  catSlug: string;
-  catName: string;
-  catNameStems: Set<string>;
-  haystack: string;
+// Fuzzy threshold for token matching (0-1). Lower = more tolerant.
+const FUZZY_THRESHOLD = 0.75;
+
+interface ScoredResource {
+  r: ResourceWithCategory;
+  score: number;
 }
 
-let indexCacheKey: ResourceWithCategory[] | null = null;
-let indexCache: ResourceIndex[] = [];
-
-function getResourceIndex(resources: ResourceWithCategory[]): ResourceIndex[] {
-  if (resources === indexCacheKey && indexCache.length === resources.length) {
-    return indexCache;
-  }
-  indexCacheKey = resources;
-  indexCache = resources.map((r) => {
-    const name = (r.name ?? '').toLowerCase();
-    const searchCorpus = (r.search_text ?? '').toLowerCase();
-    const services = (r.services ?? []).map((s) => s.toLowerCase());
-    const specialties = (r.specialties ?? []).map((s) => s.toLowerCase());
-    const tags = (r.tags ?? []).map((t) => t.toLowerCase());
-    const city = (r.city ?? '').toLowerCase();
-    const county = (r.county ?? '').toLowerCase();
-    const catSlug = r.resource_categories?.slug ?? '';
-    const catName = (r.resource_categories?.name ?? '').toLowerCase();
-
-    const serviceStems = new Set<string>();
-    for (const s of services) for (const t of stemTokens(s)) serviceStems.add(t);
-    const specialtyStems = new Set<string>();
-    for (const s of specialties) for (const t of stemTokens(s)) specialtyStems.add(t);
-    const tagStems = new Set<string>();
-    for (const t of tags) tagStems.add(stem(t));
-
-    const haystack = [
-      name, searchCorpus, services.join(' '), specialties.join(' '),
-      tags.join(' '), city, county, catName,
-    ].join(' ');
-
-    return {
-      name,
-      nameWords: name.split(/\s+/).filter(Boolean),
-      nameStems: stemTokens(name),
-      searchCorpus,
-      corpusWords: searchCorpus.split(/\s+/).filter((w) => w.length >= 4),
-      corpusStems: stemTokens(searchCorpus),
-      services,
-      serviceStems,
-      specialties,
-      specialtyStems,
-      tags,
-      tagStems,
-      city,
-      county,
-      catSlug,
-      catName,
-      catNameStems: stemTokens(catName),
-      haystack,
-    };
-  });
-  return indexCache;
-}
-
-function scoreResourceWithIndex(
+function scoreResourceIndexed(
   idx: ResourceIndex,
   expanded: ExpandedQuery,
 ): number {
   const tokens = expanded.tokens;
   if (tokens.length === 0) return 1;
 
-  // Cheap substring pre-filter: if none of the query tokens appear as a
-  // substring in the resource haystack AND no symptom category matched,
-  // skip the resource entirely. This avoids running expensive Levenshtein
-  // fuzzy matching on resources that have zero chance of matching.
-  if (expanded.matchedCategories.length === 0 || !expanded.matchedCategories.includes(idx.catSlug)) {
-    let anySubstring = false;
+  // Cheap substring pre-filter: if no token appears anywhere in the haystack
+  // AND no token is short enough to plausibly fuzzy-match, skip the resource
+  // entirely. This avoids the expensive per-token fuzzy loops for the vast
+  // majority of resources that can't match.
+  let anyPossible = false;
+  for (const token of tokens) {
+    if (!isSignificant(token)) continue;
+    if (idx.haystack.includes(token)) { anyPossible = true; break; }
+  }
+  // If no exact substring hit, fall back to checking whether any token could
+  // plausibly fuzzy-match (only run for tokens >= 4 chars to avoid noise).
+  if (!anyPossible) {
     for (const token of tokens) {
-      if (idx.haystack.includes(token)) { anySubstring = true; break; }
+      if (token.length < 4) { anyPossible = true; break; }
     }
-    if (!anySubstring) {
-      // Still allow fuzzy-only matches but only for short token lists
-      // (single-token typo searches). For multi-token queries, require at
-      // least one substring hit to avoid O(n*tokens*fields) fuzzy work.
-      if (tokens.length > 1) return 0;
+    if (!anyPossible) {
+      // Check stem overlap as a cheaper proxy before fuzzy.
+      for (const token of tokens) {
+        if (idx.nameStems.has(stem(token)) || idx.corpusStems.has(stem(token)) ||
+            idx.serviceStems.has(stem(token)) || idx.specialtyStems.has(stem(token)) ||
+            idx.tagStems.has(stem(token)) || idx.catNameStems.has(stem(token))) {
+          anyPossible = true; break;
+        }
+      }
     }
   }
+  if (!anyPossible && expanded.matchedCategories.length === 0) return 0;
 
   let score = 0;
   let matchedAny = false;
@@ -855,7 +839,6 @@ function scoreResourceWithIndex(
 
   if (!matchedAny) return 0;
 
-  // Deprioritize crisis lines for non-crisis queries.
   if (idx.catSlug === 'crisis-line' && !expanded.isCrisisQuery) {
     score *= 0.15;
   }
@@ -865,15 +848,9 @@ function scoreResourceWithIndex(
 
 // ─── Main hybrid search ───────────────────────────────────────────────────────
 
-interface ScoredResource {
-  r: ResourceWithCategory;
-  score: number;
-}
-
 export function hybridSearch(
   resources: ResourceWithCategory[],
   filters: HybridFilters,
-  symptoms?: Symptom[],
 ): ResourceWithCategory[] {
   let result = resources;
 
@@ -901,12 +878,10 @@ export function hybridSearch(
   }
   if (filters.city) {
     const c = filters.city.toLowerCase();
-    const before = result;
     result = result.filter((r) =>
       r.city.toLowerCase().includes(c) ||
       fuzzyMatch(c, r.city.toLowerCase(), FUZZY_THRESHOLD)
     );
-    if (result.length === 0) result = before;
   }
 
   // d) Boolean attribute filters
@@ -935,38 +910,23 @@ export function hybridSearch(
     const textWithoutZip = filters.text.replace(/\b\d{5}\b/g, '').trim();
     if (textWithoutZip) {
       const expanded = expandQuery(textWithoutZip);
-
-      // Merge symptom category mappings from the database so that search
-      // results include the same resources the symptom detail page
-      // recommends (e.g. "back pain" → primary-care).
-      if (symptoms && symptoms.length > 0) {
-        const dbMatches = searchSymptoms(symptoms, textWithoutZip);
-        if (dbMatches.length > 0) {
-          const dbCats = new Set(expanded.matchedCategories);
-          for (const s of dbMatches) {
-            for (const cat of s.category_slugs ?? []) dbCats.add(cat);
-            for (const kw of s.keywords ?? []) {
-              for (const sub of kw.split(' ')) {
-                if (isSignificant(sub)) expanded.stemmedTokens.add(stem(sub));
-              }
-            }
-          }
-          expanded.matchedCategories = [...dbCats];
-        }
-      }
-
       if (expanded.tokens.length > 0 || expanded.matchedCategories.length > 0) {
-        const index = getResourceIndex(result);
-        const scored: ScoredResource[] = result
-          .map((r, i) => ({ r, score: scoreResourceWithIndex(index[i], expanded) }))
-          .filter((x) => x.score > 0);
+        const index = buildResourceIndex(resources);
+        // Map each resource to its index position once (O(n)) so we can look
+        // up the precomputed index for each filtered resource in O(1).
+        const posByResource = new Map<ResourceWithCategory, number>();
+        for (let i = 0; i < resources.length; i++) posByResource.set(resources[i], i);
+        const scored: ScoredResource[] = [];
+        for (const r of result) {
+          const resIdx = index[posByResource.get(r) ?? -1];
+          if (!resIdx) continue;
+          const score = scoreResourceIndexed(resIdx, expanded);
+          if (score > 0) scored.push({ r, score });
+        }
 
         if (scored.length > 0) {
           scored.sort((a, b) => {
             if (b.score !== a.score) return b.score - a.score;
-            const aOpen = isOpenNow(a.r.hours) ? 1 : 0;
-            const bOpen = isOpenNow(b.r.hours) ? 1 : 0;
-            if (aOpen !== bOpen) return bOpen - aOpen;
             return (b.r.rating ?? 0) - (a.r.rating ?? 0);
           });
           result = scored.map((x) => x.r);
