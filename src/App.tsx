@@ -36,6 +36,7 @@ import { HealthMap } from './components/HealthMap';
 import { LocationsIndexPage } from './components/LocationsIndexPage';
 import { LocationPage } from './components/LocationPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { Analytics } from '@vercel/analytics/react';
 
 export default function App() {
   const { route, navigate } = useRouter();
@@ -408,6 +409,7 @@ export default function App() {
 
       <Footer onNavigate={navigate} totalResources={roundedResources} />
       {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+      <Analytics />
     </div>
     </FavoritesProvider>
     </AuthProvider>
