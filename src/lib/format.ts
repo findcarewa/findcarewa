@@ -1,20 +1,80 @@
+const DAY_KEY_ALIASES: Record<string, string> = {
+  monday: 'mon', tuesday: 'tue', wednesday: 'wed', thursday: 'thu',
+  friday: 'fri', saturday: 'sat', sunday: 'sun',
+};
+
+/** Normalize hours object so all keys are 3-letter day abbreviations. */
+function normalizeHoursKeys(hours: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(hours)) {
+    const key = DAY_KEY_ALIASES[k.toLowerCase()] ?? k;
+    out[key] = v;
+  }
+  return out;
+}
+
+/** Convert a military-time range like "8:00-17:00" to "8am-5pm". */
+function toAmPm(value: string): string {
+  if (!value) return value;
+  const lower = value.toLowerCase();
+  if (lower === 'closed') return 'Closed';
+  if (lower === '24 hours' || lower === '24hours') return '24 hours';
+
+  // Handle comma-separated ranges like "11:00-13:30,15:00-17:00"
+  const parts = value.split(',').map((p) => {
+    const part = p.trim();
+    const m = part.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})/);
+    if (!m) return part; // already am/pm or unknown format — leave as-is
+    const [, sH, sM, eH, eM] = m.map(Number);
+    return `${sH > 12 ? sH - 12 : sH}${sM === 0 ? '' : ':' + String(sM).padStart(2, '0')}am-${eH > 12 ? eH - 12 : eH === 0 ? 12 : eH}${eM === 0 ? '' : ':' + String(eM).padStart(2, '0')}pm`;
+  });
+  return parts.join(', ');
+}
+
 export function formatTodayHours(hours: Record<string, string>): string {
   const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const today = days[new Date().getDay()];
-  return hours[today] ?? 'Closed';
+  const normalized = normalizeHoursKeys(hours);
+  const raw = normalized[today] ?? 'Closed';
+  return toAmPm(raw);
 }
 
 export function isOpenNow(hours: Record<string, string>): boolean {
   const today = formatTodayHours(hours);
   if (today === 'Closed' || today === '24 hours') return today === '24 hours';
-  const match = today.match(/(\d+):(\d+)\s*-\s*(\d+):(\d+)/);
-  if (!match) return false;
-  const [, startH, startM, endH, endM] = match.map(Number);
+
   const now = new Date();
   const currentMin = now.getHours() * 60 + now.getMinutes();
-  const startMin = startH * 60 + startM;
-  const endMin = endH * 60 + endM;
-  return currentMin >= startMin && currentMin <= endMin;
+
+  // Handle comma-separated ranges like "8am-12pm,1pm-5pm"
+  const ranges = today.split(',');
+  for (const range of ranges) {
+    const match = range.match(/(\d+)(?::(\d+))?\s*(am|pm)?\s*-\s*(\d+)(?::(\d+))?\s*(am|pm)?/i);
+    if (!match) continue;
+    let [, sH, sM, sApm, eH, eM, eApm] = match;
+    let startH = parseInt(sH, 10);
+    let startM = sM ? parseInt(sM, 10) : 0;
+    let endH = parseInt(eH, 10);
+    let endM = eM ? parseInt(eM, 10) : 0;
+
+    // Normalize to 24-hour for comparison
+    if (sApm && sApm.toLowerCase() === 'pm' && startH < 12) startH += 12;
+    if (sApm && sApm.toLowerCase() === 'am' && startH === 12) startH = 0;
+    if (eApm && eApm.toLowerCase() === 'pm' && endH < 12) endH += 12;
+    if (eApm && eApm.toLowerCase() === 'am' && endH === 12) endH = 0;
+
+    // If no am/pm marker, infer from 12-hour convention
+    if (!sApm && startH <= 12 && endH <= 12) {
+      if (endH < startH || (endH === startH && endM < startM)) endH += 12;
+      // e.g. 8am-5pm → if end is less than 12, assume pm
+      if (endH < 12 && endH < startH + 4) endH += 12;
+    }
+
+    const startMin = startH * 60 + startM;
+    const endMin = endH * 60 + endM;
+    if (currentMin >= startMin && currentMin <= endMin) return true;
+  }
+  return false;
 }
 
 export function formatHoursList(hours: Record<string, string>): { day: string; hours: string; isToday: boolean }[] {
@@ -29,9 +89,10 @@ export function formatHoursList(hours: Record<string, string>): { day: string; h
   ];
   const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const todayKey = days[new Date().getDay()];
+  const normalized = normalizeHoursKeys(hours);
   return entries.map((e) => ({
     day: e.label,
-    hours: hours[e.key] ?? 'Closed',
+    hours: toAmPm(normalized[e.key] ?? 'Closed'),
     isToday: e.key === todayKey,
   }));
 }

@@ -527,6 +527,8 @@ export interface ExpandedQuery {
   matchedKeywords: string[];
   redFlag: boolean;
   isCrisisQuery: boolean;
+  /** Language name detected in the query (e.g. "Spanish"), or null. */
+  detectedLanguage: string | null;
 }
 
 /**
@@ -535,6 +537,42 @@ export interface ExpandedQuery {
 // Precompute the typo dictionary keys once at module load instead of on
 // every keystroke.
 const TYPO_KEYS = Object.keys(TYPOS);
+
+// ─── Language detection ───────────────────────────────────────────────────────
+// When a user types "Spanish speaking dentist" or "Russian doctor", the language
+// should act as a hard filter, not a soft scoring keyword. We detect known
+// language names in the query and return them so hybridSearch can filter.
+
+const KNOWN_LANGUAGES = [
+  'spanish', 'russian', 'vietnamese', 'korean', 'chinese', 'somali',
+  'amharic', 'tagalog', 'cambodian', 'mandarin', 'ukrainian', 'khmer',
+  'tigrigna', 'french', 'cantonese', 'arabic', 'japanese', 'marshallese',
+  'thai', 'hindi', 'farsi', 'ilocano', 'laotian', 'lushootseed', 'oromo',
+  'samoan', 'taiwanese', 'german', 'portuguese', 'italian', 'punjabi',
+  'urdu', 'bengali', 'gujarati', 'polish', 'romanian', 'serbian',
+  'croatian', 'nepali', 'burmese', 'karen', 'chin', 'pangasinan',
+];
+
+const LANGUAGE_PHRASES: Record<string, string> = {
+  'sign language': 'American Sign Language',
+  'asl': 'American Sign Language',
+  'signing': 'American Sign Language',
+};
+
+function detectLanguage(normalized: string): string | null {
+  // Check multi-word phrases first
+  for (const [phrase, lang] of Object.entries(LANGUAGE_PHRASES)) {
+    if (normalized.includes(phrase)) return lang;
+  }
+  // Check single-word language names
+  const tokens = new Set(normalized.split(/\s+/));
+  for (const lang of KNOWN_LANGUAGES) {
+    if (tokens.has(lang)) {
+      return lang.charAt(0).toUpperCase() + lang.slice(1);
+    }
+  }
+  return null;
+}
 
 // Memoize query expansion by normalized text. While typing, the user often
 // pauses mid-word; the same (or nearly same) query is re-expanded repeatedly.
@@ -554,8 +592,11 @@ export function expandQuery(rawText: string): ExpandedQuery {
   // Also try fuzzy typo correction for tokens not in the dictionary
   baseTokens = baseTokens.map((t) => {
     if (SYNONYMS[t] || TYPOS[t]) return t;
+    const tLen = t.length;
     // Check if token is a fuzzy match for any known typo key
     for (const typoKey of TYPO_KEYS) {
+      // Cheap length gate before expensive fuzzy computation
+      if (Math.abs(tLen - typoKey.length) > Math.max(tLen, typoKey.length) * 0.3) continue;
       if (fuzzyMatch(t, typoKey, 0.85)) return TYPOS[typoKey];
     }
     return t;
@@ -634,6 +675,8 @@ export function expandQuery(rawText: string): ExpandedQuery {
   const stemmedTokens = new Set<string>();
   for (const t of significantTokens) stemmedTokens.add(stem(t));
 
+  const detectedLanguage = detectLanguage(normalized);
+
   const result: ExpandedQuery = {
     normalized,
     tokens: significantTokens,
@@ -642,6 +685,7 @@ export function expandQuery(rawText: string): ExpandedQuery {
     matchedKeywords: [...matchedKeywords],
     redFlag,
     isCrisisQuery,
+    detectedLanguage,
   };
   if (expandCache.size >= EXPAND_CACHE_LIMIT) expandCache.clear();
   expandCache.set(normalized, result);
@@ -910,6 +954,15 @@ export function hybridSearch(
     const textWithoutZip = filters.text.replace(/\b\d{5}\b/g, '').trim();
     if (textWithoutZip) {
       const expanded = expandQuery(textWithoutZip);
+      // If the query mentions a specific language (e.g. "Spanish speaking"),
+      // apply it as a hard filter — only show resources that serve that language.
+      // The existing filters.language (from the dropdown) takes precedence.
+      if (expanded.detectedLanguage && !filters.language) {
+        const lang = expanded.detectedLanguage.toLowerCase();
+        result = result.filter((r) =>
+          r.languages.some((l) => l.toLowerCase().includes(lang))
+        );
+      }
       if (expanded.tokens.length > 0 || expanded.matchedCategories.length > 0) {
         const index = buildResourceIndex(resources);
         // Map each resource to its index position once (O(n)) so we can look

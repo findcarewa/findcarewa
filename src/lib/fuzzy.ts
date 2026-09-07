@@ -76,6 +76,11 @@ export function trigramSimilarity(a: string, b: string): number {
 
 // ─── Combined fuzzy match ────────────────────────────────────────────────────
 
+// Memoize fuzzyScore — the same token-vs-target pairs recur across keystrokes.
+// Capped to avoid unbounded growth; cleared when full.
+const fuzzyScoreCache = new Map<string, number>();
+const FUZZY_SCORE_CACHE_LIMIT = 4096;
+
 /**
  * Combined fuzzy similarity score — takes the max of Levenshtein ratio and
  * trigram Jaccard. This gives good results across both short words (where
@@ -83,7 +88,22 @@ export function trigramSimilarity(a: string, b: string): number {
  */
 export function fuzzyScore(a: string, b: string): number {
   if (a === b) return 1;
-  return Math.max(similarity(a, b), trigramSimilarity(a, b));
+  // Early exit: if lengths differ by more than 30% of the longer string,
+  // the Levenshtein ratio can't exceed 0.7, so skip the expensive computation.
+  const maxLen = Math.max(a.length, b.length);
+  const minLen = Math.min(a.length, b.length);
+  if (minLen === 0) return 0;
+  if (maxLen - minLen > maxLen * 0.3) return 0;
+
+  // Cache lookup (key is ordered so a-b and b-a hit the same entry)
+  const key = a < b ? a + '\0' + b : b + '\0' + a;
+  const cached = fuzzyScoreCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const score = Math.max(similarity(a, b), trigramSimilarity(a, b));
+  if (fuzzyScoreCache.size >= FUZZY_SCORE_CACHE_LIMIT) fuzzyScoreCache.clear();
+  fuzzyScoreCache.set(key, score);
+  return score;
 }
 
 /**
@@ -103,7 +123,11 @@ export function fuzzyMatch(token: string, target: string, threshold = 0.75): boo
  */
 export function bestFuzzyMatch(token: string, targets: string[], threshold = 0.7): number {
   let best = 0;
+  const tokenLen = token.length;
   for (const target of targets) {
+    // Cheap length gate: skip if lengths differ by >30% of the longer string.
+    const maxLen = Math.max(tokenLen, target.length);
+    if (Math.abs(tokenLen - target.length) > maxLen * 0.3) continue;
     const score = fuzzyScore(token, target);
     if (score > best) best = score;
   }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
+import { memo, useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, SlidersHorizontal, Star, MapPin, Clock, Check,
   Frown, Map as MapIcon, List, DollarSign,
@@ -29,7 +29,7 @@ export function SearchPage({
   resources, categories, initialQuery, initialCategorySlug, initialCity, onNavigate,
 }: SearchPageProps) {
   const [search, setSearch] = useState(initialQuery || '');
-  const deferredSearch = useDeferredValue(search);
+  const [searchResetKey, setSearchResetKey] = useState(0);
   const [zipFilter, setZipFilter] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | undefined>(initialCategorySlug);
   const [county, setCounty] = useState('');
@@ -81,7 +81,7 @@ export function SearchPage({
   const filtered = useMemo(() => {
     const filters: HybridFilters = {
       zip: zipFilter || undefined,
-      text: deferredSearch || undefined,
+      text: search || undefined,
       categorySlug: activeCategory,
       city: city || undefined,
       county: county || undefined,
@@ -91,7 +91,7 @@ export function SearchPage({
     };
     try {
       const results = hybridSearch(resources, filters);
-      if (deferredSearch && deferredSearch.trim().length >= 2) return results;
+      if (search && search.trim().length >= 2) return results;
       return [...results].sort((a, b) => {
         const aOpen = isOpenNow(a.hours) ? 1 : 0;
         const bOpen = isOpenNow(b.hours) ? 1 : 0;
@@ -105,9 +105,14 @@ export function SearchPage({
     }
   }, [resources, activeCategory, county, city, acceptsMedicaid, medicare, acceptsUninsured,
       slidingScale, freeOptions, free, telehealth, walkIns, appointmentsAvailable, openNow,
-      wheelchairAccessible, language, deferredSearch, zipFilter]);
+      wheelchairAccessible, language, search, zipFilter]);
+
+  const handleResourceSelect = useCallback((r: ResourceWithCategory) => {
+    onNavigate({ name: 'resource', id: r.slug || r.id });
+  }, [onNavigate]);
 
   const handleClear = () => {
+    setSearchResetKey((key) => key + 1);
     setSearch(''); setZipFilter('');
     setActiveCategory(undefined); setCounty(''); setCity('');
     setAcceptsMedicaid(false); setMedicare(false); setAcceptsUninsured(false);
@@ -124,14 +129,14 @@ export function SearchPage({
     (language ? 1 : 0) + (county ? 1 : 0) + (city ? 1 : 0) + (zipFilter ? 1 : 0);
 
   const semanticAnalysis = useMemo<SemanticAnalysis | null>(() => {
-    if (!deferredSearch || deferredSearch.trim().length < 2 || symptoms.length === 0) return null;
+    if (!search || search.trim().length < 2 || symptoms.length === 0) return null;
     try {
-      const analysis = analyzeQuery(deferredSearch, symptoms);
+      const analysis = analyzeQuery(search, symptoms);
       return analysis.symptoms.length > 0 || (analysis.intent !== 'keyword' && analysis.confidence > 0.5) ? analysis : null;
     } catch {
       return null;
     }
-  }, [deferredSearch, symptoms]);
+  }, [search, symptoms]);
 
   // Instant client-side crisis detection — runs on raw input immediately,
   // before the symptoms DB finishes loading, so crisis banners appear
@@ -159,24 +164,11 @@ export function SearchPage({
           </div>
         </div>
 
-        <div className="mb-4">
-          <div className="flex items-center gap-2 rounded-2xl bg-white border border-ink-200 shadow-soft focus-within:border-sage-400 focus-within:ring-4 focus-within:ring-sage-500/10 transition-all p-2">
-            <div className="flex items-center gap-2 pl-3 flex-1">
-              <Search className="w-5 h-5 text-primary-500 flex-shrink-0" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Describe what you need, e.g., Spanish-speaking dentist near Yakima"
-                className="flex-1 bg-transparent text-sm text-primary-800 placeholder:text-primary-400 focus:outline-none py-2.5"
-                aria-label="Search for resources"
-              />
-              {search && (
-                <button type="button" onClick={() => setSearch('')} className="px-2 py-1 rounded-lg text-xs font-medium text-primary-500 hover:bg-cream-200 transition-colors flex-shrink-0">Clear</button>
-              )}
-            </div>
-          </div>
-        </div>
+        <SearchField
+          initialQuery={initialQuery || ''}
+          resetKey={searchResetKey}
+          onQueryChange={setSearch}
+        />
 
         {zipFilter && (
           <div className="mb-3">
@@ -305,7 +297,7 @@ export function SearchPage({
                 </div>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {featuredServices(resources, 6).map((resource, idx) => (
-                    <ResourceCard key={resource.id} resource={resource} category={categories.find((c) => c.id === resource.category_id)} onClick={() => onNavigate({ name: 'resource', id: resource.slug || resource.id })} animationDelay={Math.min(idx * 30, 300)} />
+                    <ResourceCard key={resource.id} resource={resource} category={categories.find((c) => c.id === resource.category_id)} onSelect={handleResourceSelect} animationDelay={Math.min(idx * 30, 300)} />
                   ))}
                 </div>
               </div>
@@ -316,7 +308,7 @@ export function SearchPage({
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.slice(0, 60).map((resource, idx) => (
-              <ResourceCard key={resource.id} resource={resource} category={categories.find((c) => c.id === resource.category_id)} onClick={() => onNavigate({ name: 'resource', id: resource.slug || resource.id })} animationDelay={Math.min(idx * 30, 300)} />
+              <ResourceCard key={resource.id} resource={resource} category={categories.find((c) => c.id === resource.category_id)} onSelect={handleResourceSelect} animationDelay={Math.min(idx * 30, 300)} />
             ))}
             {filtered.length > 60 && (
               <div className="col-span-full text-center py-6">
@@ -330,6 +322,53 @@ export function SearchPage({
     </section>
   );
 }
+
+const SearchField = memo(function SearchField({
+  initialQuery,
+  resetKey,
+  onQueryChange,
+}: {
+  initialQuery: string;
+  resetKey: number;
+  onQueryChange: (query: string) => void;
+}) {
+  const [value, setValue] = useState(initialQuery);
+
+  useEffect(() => {
+    setValue(resetKey > 0 ? '' : initialQuery);
+  }, [initialQuery, resetKey]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => onQueryChange(value), 180);
+    return () => window.clearTimeout(timer);
+  }, [onQueryChange, value]);
+
+  const clear = () => {
+    setValue('');
+    onQueryChange('');
+  };
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center gap-2 rounded-2xl bg-white border border-ink-200 shadow-soft focus-within:border-sage-400 focus-within:ring-4 focus-within:ring-sage-500/10 transition-all p-2">
+        <div className="flex items-center gap-2 pl-3 flex-1">
+          <Search className="w-5 h-5 text-primary-500 flex-shrink-0" />
+          <input
+            type="text"
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder="Describe what you need, e.g., Spanish-speaking dentist near Yakima"
+            className="flex-1 bg-transparent text-sm text-primary-800 placeholder:text-primary-400 focus:outline-none py-2.5"
+            aria-label="Search for resources"
+          />
+          {value && (
+            <button type="button" onClick={clear} className="px-2 py-1 rounded-lg text-xs font-medium text-primary-500 hover:bg-cream-200 transition-colors flex-shrink-0">Clear</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 function MapView({ resources }: { resources: ResourceWithCategory[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -490,7 +529,7 @@ function ToggleChip({ active, onClick, label }: { active: boolean; onClick: () =
   );
 }
 
-function ResourceCard({ resource, category, onClick, animationDelay }: { resource: ResourceWithCategory; category?: ResourceCategory; onClick: () => void; animationDelay: number }) {
+const ResourceCard = memo(function ResourceCard({ resource, category, onSelect, animationDelay }: { resource: ResourceWithCategory; category?: ResourceCategory; onSelect: (r: ResourceWithCategory) => void; animationDelay: number }) {
   const Icon = category ? getCategoryIcon(category.icon) : Building2;
   const color = category ? getCategoryColor(category.color) : getCategoryColor('teal');
   const { isFavorite, toggle } = useFavorites();
@@ -499,7 +538,7 @@ function ResourceCard({ resource, category, onClick, animationDelay }: { resourc
   const open = isOpenNow(resource.hours);
   const todayHours = formatTodayHours(resource.hours);
   return (
-    <button onClick={onClick} style={{ animationDelay: `${animationDelay}ms` }} className="card-editorial group text-left rounded-2xl bg-white border border-ink-200 overflow-hidden shadow-soft hover:shadow-card hover:-translate-y-0.5 hover:border-sage-200 transition-all duration-200 ease-out-expo animate-fade-up flex flex-col">
+    <button onClick={() => onSelect(resource)} style={{ animationDelay: `${animationDelay}ms` }} className="card-editorial group text-left rounded-2xl bg-white border border-ink-200 overflow-hidden shadow-soft hover:shadow-card hover:-translate-y-0.5 hover:border-sage-200 transition-all duration-200 ease-out-expo animate-fade-up flex flex-col">
       <div className={`relative h-28 overflow-hidden bg-gradient-to-br ${color.pastelBg}`}>
         <div className="absolute inset-0 flex items-center justify-center">
           <Icon className={`w-12 h-12 ${color.pastelAccent} opacity-40 transition-transform duration-500 group-hover:scale-110 group-hover:opacity-60`} strokeWidth={1.5} />
@@ -536,7 +575,7 @@ function ResourceCard({ resource, category, onClick, animationDelay }: { resourc
       </div>
     </button>
   );
-}
+});
 
 function Badge({ color, children }: { color: 'success' | 'primary' | 'secondary' | 'accent' | 'cyan' | 'warning'; children: React.ReactNode }) {
   const colors = { success: 'bg-success-50 text-success-700', primary: 'bg-sage-50 text-sage-700', secondary: 'bg-secondary-50 text-secondary-700', accent: 'bg-accent-50 text-accent-700', cyan: 'bg-cyan-50 text-cyan-700', warning: 'bg-warning-50 text-warning-700' };
