@@ -15,7 +15,6 @@ import { useAuth } from '../lib/auth';
 import { getCategoryIcon, getCategoryColor } from '../lib/icons';
 import { formatCost, isOpenNow, formatTodayHours, roundDownFriendly } from '../lib/format';
 import { hasRating } from '../lib/resourceImages';
-import { trackSearch } from '../lib/analytics';
 
 interface SearchPageProps {
   resources: ResourceWithCategory[];
@@ -107,15 +106,6 @@ export function SearchPage({
   }, [resources, activeCategory, county, city, acceptsMedicaid, medicare, acceptsUninsured,
       slidingScale, freeOptions, free, telehealth, walkIns, appointmentsAvailable, openNow,
       wheelchairAccessible, language, search, zipFilter]);
-
-  // Track searches with debounce so we don't log every keystroke
-  useEffect(() => {
-    if (!search || search.trim().length < 2) return;
-    const timer = window.setTimeout(() => {
-      trackSearch(search.trim(), filtered.length, activeCategory, city || undefined);
-    }, 1500);
-    return () => window.clearTimeout(timer);
-  }, [search, filtered.length, activeCategory, city]);
 
   const handleResourceSelect = useCallback((r: ResourceWithCategory) => {
     onNavigate({ name: 'resource', id: r.slug || r.id });
@@ -314,7 +304,7 @@ export function SearchPage({
             )}
           </div>
         ) : view === 'map' ? (
-          <MapView resources={filtered} />
+          <MapView resources={filtered.slice(0, 200)} />
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.slice(0, 60).map((resource, idx) => (
@@ -383,7 +373,6 @@ const SearchField = memo(function SearchField({
 function MapView({ resources }: { resources: ResourceWithCategory[] }) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<ReturnType<typeof window.L.map> | null>(null);
-  const markerLayer = useRef<ReturnType<typeof window.L.layerGroup> | null>(null);
 
   useEffect(() => {
     if (document.querySelector('#leaflet-css')) { initMap(); return; }
@@ -400,22 +389,14 @@ function MapView({ resources }: { resources: ResourceWithCategory[] }) {
 
   function initMap() {
     if (!window.L || !mapRef.current || mapInstance.current) return;
-    const map = window.L.map(mapRef.current, {
-      center: [47.3511, -120.7401],
-      zoom: 7,
-      maxBounds: window.L.latLngBounds([[45.5, -125.5], [49.0, -116.5]]),
-      maxBoundsViscosity: 0.8,
-      minZoom: 6,
-    });
+    const map = window.L.map(mapRef.current).setView([47.3511, -120.7401], 6);
     window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors', maxZoom: 18 }).addTo(map);
-    markerLayer.current = window.L.layerGroup().addTo(map);
     mapInstance.current = map;
     updateMarkers();
   }
 
   function updateMarkers() {
-    if (!mapInstance.current || !window.L || !markerLayer.current) return;
-    markerLayer.current.clearLayers();
+    if (!mapInstance.current || !window.L) return;
     const bounds: [number, number][] = [];
     resources.forEach((r) => {
       if (r.lat && r.lng) {
@@ -423,14 +404,13 @@ function MapView({ resources }: { resources: ResourceWithCategory[] }) {
         const pinColor = '#0d9488';
         const pinSvg = `<svg xmlns='http://www.w3.org/2000/svg' width='26' height='36.4' viewBox='0 0 32 44.8'><defs><filter id='s'><feDropShadow dx='0' dy='1.6' stdDeviation='1.4' flood-color='#0f172a' flood-opacity='0.35'/></filter></defs><path d='M16 1.5C8.0 1.5 1.5 8.0 1.5 16c0 10.6 14.5 27.3 14.5 27.3S30.5 26.6 30.5 16C30.5 8.0 24.0 1.5 16 1.5z' fill='${pinColor}' stroke='#ffffff' stroke-width='2.4' stroke-linejoin='round' filter='url(#s)'/><circle cx='16' cy='15.5' r='4.6' fill='#ffffff' fill-opacity='0.96'/><circle cx='16' cy='15.5' r='2.1' fill='${pinColor}'/></svg>`;
         const pinIcon = window.L.divIcon({ className: 'fc-map-pin', html: `<img src='data:image/svg+xml;base64,${btoa(pinSvg)}' style='width:26px;height:36.4px;display:block'/>`, iconSize: [26, 36.4], iconAnchor: [13, 36.4], popupAnchor: [0, -32] });
-        const marker = window.L.marker([r.lat, r.lng], { icon: pinIcon }).addTo(markerLayer.current);
+        const marker = window.L.marker([r.lat, r.lng], { icon: pinIcon }).addTo(mapInstance.current);
         marker.bindPopup(`<div style="min-width:180px"><strong style="font-size:13px">${r.name}</strong><br/><span style="font-size:11px;color:#64748b">${cat?.name || 'Resource'} \u00b7 ${r.city}</span><br/><a href="/resource/${r.slug || r.id}" style="font-size:12px;color:#0d9488">View details \u2192</a></div>`);
         bounds.push([r.lat!, r.lng!]);
       }
     });
-    if (bounds.length > 1) { mapInstance.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 10 }); }
+    if (bounds.length > 1) { mapInstance.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 11 }); }
     else if (bounds.length === 1) { mapInstance.current.setView(bounds[0], 13); }
-    else { mapInstance.current.setView([47.3511, -120.7401], 7); }
   }
 
   useEffect(() => { updateMarkers(); // eslint-disable-next-line

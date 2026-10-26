@@ -1,1 +1,0 @@
-DROP FUNCTION IF EXISTS public._temp_exec_sql(text);

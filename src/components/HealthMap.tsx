@@ -3,13 +3,14 @@ import { Search, X, MapPin, Filter, Layers, Navigation, Clock } from 'lucide-rea
 import type { ResourceCategory, ResourceWithCategory } from '../lib/supabase';
 import type { Route } from '../lib/router';
 import { isOpenNow, formatTodayHours } from '../lib/format';
+import { loadGoogleMaps } from '../lib/mapsLoader';
 import { ResourceDetail } from './ResourceDetail';
 
+const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+
 // WA state center + zoom
-const WA_CENTER: [number, number] = [47.4009, -120.5015];
-const WA_ZOOM = 7;
-// WA state bounding box — prevents panning/zooming beyond the state
-const WA_BOUNDS: [[number, number], [number, number]] = [[45.5, -125.5], [49.0, -116.5]];
+const WA_CENTER  = { lat: 47.4009, lng: -120.5015 };
+const WA_ZOOM    = 7;
 
 // Category slug → pin colour (hex, must contrast on light map)
 const PIN_COLORS: Record<string, string> = {
@@ -34,8 +35,10 @@ function pinColor(slug: string | undefined): string {
   return PIN_COLORS[slug ?? ''] ?? DEFAULT_PIN;
 }
 
-/** Build an SVG pin data-URI for Leaflet divIcon. */
-function makePinSvg(color: string, size = 30, selected = false): string {
+/** Build a modern SVG pin data-URI.
+ *  Crisp white ring + soft drop shadow lift it off any basemap;
+ *  solid colored body with a small white inner dot gives a clean focal point. */
+function makePinSvg(color: string, size = 34, selected = false): string {
   const stroke = selected ? 3.2 : 2.4;
   const dotR = selected ? 2.6 : 2.1;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size * 1.4}" viewBox="0 0 32 44.8">
@@ -59,24 +62,22 @@ interface HealthMapProps {
 }
 
 export function HealthMap({ resources, categories, onNavigate }: HealthMapProps) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<ReturnType<typeof window.L.map> | null>(null);
-  const markerLayer = useRef<ReturnType<typeof window.L.layerGroup> | null>(null);
+  const mapRef  = useRef<HTMLDivElement>(null);
+  const gMap    = useRef<google.maps.Map | null>(null);
+  const infoWindow = useRef<google.maps.InfoWindow | null>(null);
+  const markers = useRef<google.maps.Marker[]>([]);
 
-  const [mapReady, setMapReady] = useState(false);
-  const [selected, setSelected] = useState<ResourceWithCategory | null>(null);
-  const [search, setSearch] = useState('');
+  const [mapReady,  setMapReady]  = useState(false);
+  const [mapError,  setMapError]  = useState<string | null>(null);
+  const [selected,  setSelected]  = useState<ResourceWithCategory | null>(null);
+  const [search,    setSearch]    = useState('');
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [onlyOpen, setOnlyOpen] = useState(false);
+  const [onlyOpen,  setOnlyOpen]  = useState(false);
 
-  // Resources that are mappable (have valid lat/lng within WA state bounds)
+  // Resources that are mappable (have lat/lng)
   const mappable = useMemo(
-    () => resources.filter(
-      (r) => r.lat != null && r.lng != null
-        && r.lat >= 45.5 && r.lat <= 49.0
-        && r.lng >= -125.0 && r.lng <= -116.5
-    ),
+    () => resources.filter((r) => r.lat != null && r.lng != null),
     [resources]
   );
 
@@ -84,7 +85,7 @@ export function HealthMap({ resources, categories, onNavigate }: HealthMapProps)
   const filtered = useMemo(() => {
     let set = mappable;
     if (activeSlug) set = set.filter((r) => r.resource_categories?.slug === activeSlug);
-    if (onlyOpen) set = set.filter((r) => isOpenNow(r.hours));
+    if (onlyOpen)   set = set.filter((r) => isOpenNow(r.hours));
     if (search.trim()) {
       const q = search.toLowerCase();
       set = set.filter((r) =>
@@ -96,108 +97,94 @@ export function HealthMap({ resources, categories, onNavigate }: HealthMapProps)
     return set;
   }, [mappable, activeSlug, onlyOpen, search]);
 
-  // Load Leaflet CSS + JS, then init map
+  // Load Google Maps JS API
   useEffect(() => {
-    if (document.querySelector('#leaflet-css')) { initMap(); return; }
-    const css = document.createElement('link');
-    css.id = 'leaflet-css'; css.rel = 'stylesheet';
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(css);
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = () => initMap();
-    document.body.appendChild(script);
-    // eslint-disable-next-line
+    if (!GOOGLE_KEY) {
+      setMapError('Add VITE_GOOGLE_MAPS_API_KEY to .env to enable the map.');
+      return;
+    }
+    loadGoogleMaps().then((g) => {
+      if (g) setMapReady(true);
+      else setMapError('Failed to load Google Maps. Check your API key.');
+    });
   }, []);
 
-  function initMap() {
-    if (!window.L || !mapRef.current || mapInstance.current) return;
-    const map = window.L.map(mapRef.current, {
-      center: WA_CENTER,
-      zoom: WA_ZOOM,
-      maxBounds: window.L.latLngBounds(WA_BOUNDS),
-      maxBoundsViscosity: 0.8,
-      minZoom: 6,
-    });
-    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 18,
-    }).addTo(map);
-    markerLayer.current = window.L.layerGroup().addTo(map);
-    mapInstance.current = map;
-    setMapReady(true);
-    updateMarkers();
-    fitBounds();
-  }
+  // Initialize map once API is ready
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
 
-  function updateMarkers() {
-    if (!mapInstance.current || !window.L || !markerLayer.current) return;
-    markerLayer.current.clearLayers();
+    gMap.current = new google.maps.Map(mapRef.current, {
+      center: WA_CENTER,
+      zoom:   WA_ZOOM,
+      mapTypeId: 'roadmap',
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+      zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_CENTER },
+      styles: MAP_STYLES,
+    });
+
+    infoWindow.current = new google.maps.InfoWindow();
+  }, [mapReady]);
+
+  // Place/update markers whenever filtered set changes
+  useEffect(() => {
+    if (!gMap.current) return;
+
+    // Remove old markers
+    markers.current.forEach((m) => m.setMap(null));
+    markers.current = [];
 
     filtered.forEach((resource) => {
       if (resource.lat == null || resource.lng == null) return;
-      const slug = resource.resource_categories?.slug ?? '';
+      const slug  = resource.resource_categories?.slug ?? '';
       const color = pinColor(slug);
-      const open = isOpenNow(resource.hours);
-      const pinColorStr = open ? color : '#94a3b8';
+      const open  = isOpenNow(resource.hours);
 
-      const pinIcon = window.L.divIcon({
-        className: 'fc-map-pin',
-        html: `<img src="${makePinSvg(pinColorStr)}" style="width:30px;height:42px;display:block"/>`,
-        iconSize: [30, 42],
-        iconAnchor: [15, 42],
-        popupAnchor: [0, -36],
+      const marker = new google.maps.Marker({
+        position: { lat: resource.lat, lng: resource.lng },
+        map: gMap.current!,
+        title: resource.name,
+        icon: {
+          url: makePinSvg(open ? color : '#94a3b8'),
+          scaledSize: new google.maps.Size(30, 42),
+          anchor: new google.maps.Point(15, 42),
+        },
+        optimized: true,
       });
 
-      const marker = window.L.marker([resource.lat, resource.lng], { icon: pinIcon });
-      marker.bindPopup(
-        `<div style="min-width:200px">
-          <strong style="font-size:13px;color:#1e293b">${resource.name}</strong><br/>
-          <span style="font-size:11px;color:#64748b">${resource.resource_categories?.name || 'Resource'} &middot; ${resource.city}</span><br/>
-          <span style="font-size:11px;color:${open ? '#16a34a' : '#94a3b8'}">${open ? 'Open now' : 'Closed'} &middot; ${formatTodayHours(resource.hours)}</span><br/>
-          <a href="/resource/${resource.slug || resource.id}" style="font-size:12px;color:#0d9488;font-weight:600">View details &rarr;</a>
-        </div>`
-      );
-      marker.on('click', () => setSelected(resource));
-      markerLayer.current!.addLayer(marker);
-    });
-  }
+      marker.addListener('click', () => {
+        setSelected(resource);
+        // Pan map toward selected marker (offset left to avoid sidebar covering it)
+        gMap.current?.panTo({ lat: resource.lat! + 0.01, lng: resource.lng! });
+      });
 
-  function fitBounds() {
-    if (!mapInstance.current) return;
+      markers.current.push(marker);
+    });
+  }, [filtered, gMap.current]);
+
+  // Fit map bounds whenever filtered set changes
+  useEffect(() => {
+    if (!gMap.current) return;
     const pts = filtered.filter((r) => r.lat != null && r.lng != null);
     if (pts.length === 1) {
-      mapInstance.current.setView([pts[0].lat!, pts[0].lng!], 13);
+      gMap.current.setCenter({ lat: pts[0].lat!, lng: pts[0].lng! });
+      gMap.current.setZoom(13);
     } else if (pts.length > 1) {
-      const bounds = window.L.latLngBounds(pts.map((r) => [r.lat!, r.lng!] as [number, number]));
-      mapInstance.current.fitBounds(bounds, { padding: [60, 60], maxZoom: 10 });
-    } else {
-      mapInstance.current.setView(WA_CENTER, WA_ZOOM);
+      const bounds = new google.maps.LatLngBounds();
+      pts.forEach((r) => bounds.extend({ lat: r.lat!, lng: r.lng! }));
+      gMap.current.fitBounds(bounds, 60);
     }
-  }
-
-  // Update markers when filtered set changes
-  useEffect(() => {
-    if (!mapInstance.current) return;
-    updateMarkers();
-    fitBounds();
-    // eslint-disable-next-line
-  }, [filtered]);
-
-  // Invalidate map size when becoming visible (route change)
-  useEffect(() => {
-    if (mapInstance.current) {
-      setTimeout(() => mapInstance.current?.invalidateSize(), 200);
-    }
-  }, []);
+  }, [filtered, gMap.current]);
 
   const handleSearchInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
   }, []);
 
   function flyTo(resource: ResourceWithCategory) {
-    if (!mapInstance.current || resource.lat == null || resource.lng == null) return;
-    mapInstance.current.setView([resource.lat, resource.lng], 15);
+    if (!gMap.current || resource.lat == null || resource.lng == null) return;
+    gMap.current.panTo({ lat: resource.lat, lng: resource.lng });
+    gMap.current.setZoom(15);
     setSelected(resource);
   }
 
@@ -212,6 +199,20 @@ export function HealthMap({ resources, categories, onNavigate }: HealthMapProps)
   }, [filtered]);
 
   const activeFilters = (activeSlug ? 1 : 0) + (onlyOpen ? 1 : 0);
+
+  if (mapError) {
+    return (
+      <div className="pt-20 min-h-screen bg-cream-50 flex items-center justify-center">
+        <div className="text-center p-8 max-w-md">
+          <div className="w-14 h-14 rounded-2xl bg-ink-100 flex items-center justify-center mx-auto mb-4">
+            <MapPin className="w-7 h-7 text-ink-400" />
+          </div>
+          <h2 className="font-display font-bold text-xl text-primary-800 mb-2">Map unavailable</h2>
+          <p className="text-sm text-primary-500">{mapError}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pt-16 lg:pt-20 flex flex-col" style={{ height: '100vh' }}>
@@ -294,7 +295,7 @@ export function HealthMap({ resources, categories, onNavigate }: HealthMapProps)
 
       {/* ── Map + sidebar ────────────────────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Leaflet map canvas */}
+        {/* Google Map canvas */}
         <div ref={mapRef} className="flex-1 h-full" />
 
         {/* Loading overlay */}
@@ -343,7 +344,7 @@ export function HealthMap({ resources, categories, onNavigate }: HealthMapProps)
         </aside>
 
         {/* Legend (bottom-left) — compact floating pill */}
-        <div className="absolute bottom-5 left-4 bg-white/95 backdrop-blur-md rounded-2xl shadow-card border border-ink-200 p-3.5 hidden md:block max-w-[220px] z-[1000]">
+        <div className="absolute bottom-5 left-4 bg-white/95 backdrop-blur-md rounded-2xl shadow-card border border-ink-200 p-3.5 hidden md:block max-w-[220px]">
           <p className="text-[10px] font-bold uppercase tracking-wider text-primary-400 mb-2.5 flex items-center gap-1.5">
             <Layers className="w-3 h-3" /> Categories
           </p>
@@ -422,3 +423,25 @@ function MapSidebarCard({
     </button>
   );
 }
+
+// ─── Subtle map style (muted, healthcare-appropriate) ────────────────────────
+
+const MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#f5f5f0' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#f5f5f0' }] },
+  { featureType: 'administrative.land_parcel', elementType: 'labels.text.fill', stylers: [{ color: '#bdbdbd' }] },
+  { featureType: 'poi', elementType: 'geometry', stylers: [{ color: '#eeeeee' }] },
+  { featureType: 'poi', elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#e5f0e5' }] },
+  { featureType: 'poi.park', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road.arterial', elementType: 'labels.text.fill', stylers: [{ color: '#757575' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#dadada' }] },
+  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#616161' }] },
+  { featureType: 'road.local', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
+  { featureType: 'transit.line', elementType: 'geometry', stylers: [{ color: '#e5e5e5' }] },
+  { featureType: 'transit.station', elementType: 'geometry', stylers: [{ color: '#eeeeee' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#c9e4f0' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#9e9e9e' }] },
+];
