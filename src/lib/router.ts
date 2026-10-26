@@ -11,6 +11,7 @@ export type Route =
   | { name: 'how-it-works' }
   | { name: 'saved' }
   | { name: 'faq' }
+  | { name: 'analytics' }
   | { name: 'symptoms' }
   | { name: 'symptom'; slug: string }
   | { name: 'locations' }
@@ -72,6 +73,7 @@ function parseUrl(): Route {
   if (segments[0] === 'about') return { name: 'about' };
   if (segments[0] === 'saved') return { name: 'saved' };
   if (segments[0] === 'faq') return { name: 'faq' };
+  if (segments[0] === 'analytics') return { name: 'analytics' };
   if (segments[0] === 'how-it-works') return { name: 'how-it-works' };
   if (segments[0] === 'symptoms') return { name: 'symptoms' };
   if (segments[0] === 'symptom' && segments[1]) return { name: 'symptom', slug: segments[1] };
@@ -112,6 +114,7 @@ export function routeToPath(route: Route): string {
     case 'how-it-works': return '/how-it-works';
     case 'saved': return '/saved';
     case 'faq': return '/faq';
+    case 'analytics': return '/analytics';
     case 'symptoms': return '/symptoms';
     case 'symptom': return `/symptom/${route.slug}`;
   }

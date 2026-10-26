@@ -62,7 +62,7 @@ import {
 import type { IconProps } from '@phosphor-icons/react';
 import { Funnel as PhFilter, Calendar as PhCalendar } from '@phosphor-icons/react';
 import { Globe as PhGlobe, NavigationArrow as PhNavigation, Wheelchair as PhAccessibility, Translate as PhLanguages } from '@phosphor-icons/react';
-import { Database as PhDatabase, ArrowsClockwise as PhRefresh, Lock as PhLock, ChartBar as PhChartBar, Trash as PhTrash, Keyboard as PhKeyboard, TextAa as PhType, MagnifyingGlassPlus as PhZoomIn, SpeakerHigh as PhVolume2, XCircle as PhXCircle } from '@phosphor-icons/react';
+import { Database as PhDatabase, ArrowsClockwise as PhRefresh, Lock as PhLock, ChartBar as PhChartBar, Trash as PhTrash, Keyboard as PhKeyboard, TextAa as PhType, MagnifyingGlassPlus as PhZoomIn, SpeakerHigh as PhVolume2, XCircle as PhXCircle, TrendUp as PhTrendUp, ArrowLeft as PhArrowLeft } from '@phosphor-icons/react';
 type IconComp = React.ComponentType<IconProps & { weight?: 'regular' | 'bold' | 'fill' | 'thin' | 'light' | 'duotone' }>;
 
 // Re-export all Phosphor icons we use with the names components expect
@@ -147,3 +147,6 @@ export const ZoomIn: IconComp = PhZoomIn;
 export const Volume2: IconComp = PhVolume2;
 export const XCircle: IconComp = PhXCircle;
 export const UserCircle: IconComp = PhUserCircle;
+export const TrendUp: IconComp = PhTrendUp;
+export const ArrowLeft: IconComp = PhArrowLeft;
+export const BarChart3: IconComp = PhChartBar;

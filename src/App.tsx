@@ -36,6 +36,8 @@ import { HealthMap } from './components/HealthMap';
 import { LocationsIndexPage } from './components/LocationsIndexPage';
 import { LocationPage } from './components/LocationPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AnalyticsPage } from './components/AnalyticsPage';
+import { trackPageView, trackResourceView } from './lib/analytics';
 
 export default function App() {
   const { route, navigate } = useRouter();
@@ -120,6 +122,15 @@ export default function App() {
   useEffect(() => {
     injectSiteSchema();
   }, []);
+
+  // ── Analytics: track page views on every route change ──────────────
+  useEffect(() => {
+    if (route.name === 'resource' && route.id) {
+      trackResourceView(route.id);
+    } else if (route.name !== 'analytics') {
+      trackPageView(route.name);
+    }
+  }, [route]);
 
   // ── SEO: update page metadata + JSON-LD on every route change ──────────
   useEffect(() => {
@@ -369,6 +380,9 @@ export default function App() {
 
         {route.name === 'faq' && (
           <FAQPage onNavigate={navigate} />
+        )}
+        {route.name === 'analytics' && (
+          <AnalyticsPage onNavigate={navigate} />
         )}
         {route.name === 'symptoms' && (
           <SymptomsPage onNavigate={navigate} />
