@@ -7,7 +7,8 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null; needsEmailConfirm: boolean }>;
+  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>;
+  signInWithOAuth: (provider: 'google' | 'facebook') => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -40,16 +41,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signUp(email: string, password: string, displayName: string) {
-    const { data, error } = await supabase.auth.signUp({
+    const { error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { display_name: displayName } },
     });
-    if (error) return { error: error.message };
-    // If email confirmation is disabled, the user is immediately logged in.
-    // If email confirmation is enabled, data.session will be null and the
-    // caller should show the "check your email" screen.
-    return { error: null, needsEmailConfirm: !data.session };
+    return { error: error?.message ?? null };
+  }
+
+  async function signInWithOAuth(provider: 'google' | 'facebook') {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: window.location.origin },
+    });
+    return { error: error?.message ?? null };
   }
 
   async function signOut() {
@@ -57,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signIn, signUp, signInWithOAuth, signOut }}>
       {children}
     </AuthContext.Provider>
   );

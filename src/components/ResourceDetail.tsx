@@ -192,7 +192,7 @@ export function ResourceDetail({ resource, categories, onClose, onNavigate, allR
                 <div className="rounded-xl bg-white border border-ink-200 p-3">
                   <div className="flex items-baseline justify-between">
                     <span className="text-xs font-medium text-primary-500">{costEstimate.label}</span>
-                    <span className="font-bold text-xl text-primary-800">
+                    <span className="font-display font-extrabold text-xl text-primary-800">
                       {formatCost(costEstimate.min, costEstimate.max, resource.cost_free, resource.sliding_scale)}
                     </span>
                   </div>
