@@ -3,6 +3,7 @@ import {
   List as PhList, X as PhX, Heart as PhHeart,
   ChatCircleDots as PhFeedback, User as PhUser, SignOut as PhSignOut,
   Bookmark as PhBookmark, MapTrifold as PhMap,
+  ChartBar as PhChartBar,
 } from '@phosphor-icons/react';
 import type { Route } from '../lib/router';
 import { useAuth } from '../lib/auth';
